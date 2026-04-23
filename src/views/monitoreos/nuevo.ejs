@@ -1,0 +1,126 @@
+<section class="page-header">
+  <div>
+    <p class="eyebrow">Monitoreos</p>
+    <h1>Registrar Monitoreo</h1>
+    <p>Primer paso del registro: seleccione el origen de la muestra y complete los datos base del formulario.</p>
+  </div>
+
+  <a class="button button-secondary" href="/home">Volver al inicio</a>
+</section>
+
+<section class="info-panel">
+  <strong>Resolucion automatica en backend</strong>
+  <p>El usuario solo selecciona fundo, campo, variedad y cuartel. El sistema resolvera internamente SDP, CSG y trazabilidad usando la relacion activa del cuartel.</p>
+</section>
+
+<% if (success) { %>
+  <div class="alert alert-success" role="status"><%= success %></div>
+<% } %>
+
+<% if (errors && errors.length > 0) { %>
+  <div class="alert" role="alert">
+    <strong>Revise los datos ingresados.</strong>
+    <ul class="message-list">
+      <% errors.forEach((message) => { %>
+        <li><%= message %></li>
+      <% }) %>
+    </ul>
+  </div>
+<% } %>
+
+<div id="monitoreo-combos-error" class="alert" role="alert" hidden></div>
+
+<section class="form-panel">
+  <form class="form form-grid" action="/monitoreos" method="POST" autocomplete="off" novalidate>
+    <div class="form-group">
+      <label for="genFundo">Fundo</label>
+      <select id="genFundo" name="genFundo" data-selected="<%= values.genFundo %>" required>
+        <option value="">Seleccione un fundo</option>
+        <% opciones.fundos.forEach((item) => { %>
+          <option value="<%= item.value %>" <%= Number(values.genFundo) === Number(item.value) ? 'selected' : '' %>><%= item.label %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="genCampo">Campo</label>
+      <select id="genCampo" name="genCampo" data-selected="<%= values.genCampo %>" disabled required>
+        <option value="">Seleccione primero un fundo</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="genVariedad">Variedad</label>
+      <select id="genVariedad" name="genVariedad" data-selected="<%= values.genVariedad %>" disabled required>
+        <option value="">Seleccione primero un campo</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="genCuartel">Cuartel</label>
+      <select id="genCuartel" name="genCuartel" data-selected="<%= values.genCuartel %>" disabled required>
+        <option value="">Seleccione primero una variedad</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="idEstructura">Estructura</label>
+      <select id="idEstructura" name="idEstructura" required>
+        <option value="">Seleccione una estructura</option>
+        <% opciones.estructuras.forEach((item) => { %>
+          <option value="<%= item.value %>" <%= Number(values.idEstructura) === Number(item.value) ? 'selected' : '' %>><%= item.label %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="fechaSolicitudMuestra">Fecha solicitud muestra</label>
+      <input
+        id="fechaSolicitudMuestra"
+        name="fechaSolicitudMuestra"
+        type="date"
+        value="<%= values.fechaSolicitudMuestra %>"
+        required
+      >
+    </div>
+
+    <div class="form-group">
+      <label for="fechaRecepcionMuestra">Fecha recepcion muestra</label>
+      <input
+        id="fechaRecepcionMuestra"
+        name="fechaRecepcionMuestra"
+        type="date"
+        value="<%= values.fechaRecepcionMuestra %>"
+        required
+      >
+    </div>
+
+    <div class="form-group">
+      <label for="fechaRevisionMuestra">Fecha revision muestra</label>
+      <input
+        id="fechaRevisionMuestra"
+        name="fechaRevisionMuestra"
+        type="date"
+        value="<%= values.fechaRevisionMuestra %>"
+        required
+      >
+    </div>
+
+    <div class="form-group form-group-full">
+      <label for="observacionGeneral">Observacion general</label>
+      <textarea
+        id="observacionGeneral"
+        name="observacionGeneral"
+        rows="4"
+        placeholder="Ingrese observaciones relevantes para el muestreo"
+      ><%= values.observacionGeneral %></textarea>
+    </div>
+
+    <div class="form-actions">
+      <a class="button button-secondary" href="/home">Cancelar</a>
+      <button class="button button-primary button-fit" type="submit">Guardar</button>
+    </div>
+  </form>
+</section>
+
+<script src="/js/monitoreos-form.js"></script>

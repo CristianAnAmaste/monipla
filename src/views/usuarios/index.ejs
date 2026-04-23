@@ -1,0 +1,76 @@
+<section class="page-header">
+  <div>
+    <p class="eyebrow">Administracion</p>
+    <h1>Usuarios</h1>
+    <p>Gestion inicial de cuentas habilitadas para operar el sistema.</p>
+  </div>
+
+  <a class="button button-primary button-fit" href="/usuarios/nuevo">Nuevo usuario</a>
+</section>
+
+<% if (typeof success !== 'undefined' && success) { %>
+  <div class="alert alert-success" role="status"><%= success %></div>
+<% } %>
+
+<% if (typeof error !== 'undefined' && error) { %>
+  <div class="alert" role="alert"><%= error %></div>
+<% } %>
+
+<section class="data-panel">
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Correo</th>
+          <th>Rol</th>
+          <th>Sede</th>
+          <th>Activo</th>
+          <th>Fecha creacion</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (usuarios.length === 0) { %>
+          <tr>
+            <td colspan="7" class="empty-state">No hay usuarios registrados.</td>
+          </tr>
+        <% } %>
+
+        <% usuarios.forEach((item) => { %>
+          <tr>
+            <td><strong><%= item.nombre %></strong></td>
+            <td><%= item.correo %></td>
+            <td><span class="badge"><%= item.rol %></span></td>
+            <td><%= item.sede %></td>
+            <td>
+              <% if (item.activo) { %>
+                <span class="status status-on">Activo</span>
+              <% } else { %>
+                <span class="status status-off">Inactivo</span>
+              <% } %>
+            </td>
+            <td>
+              <%= item.fecha_creacion ? new Date(item.fecha_creacion).toLocaleDateString('es-CL') : '-' %>
+            </td>
+            <td>
+              <div class="table-actions">
+                <a class="button button-secondary button-small" href="/usuarios/<%= item.id %>/editar">Editar</a>
+                <a class="button button-secondary button-small" href="/usuarios/<%= item.id %>/password">Cambiar contrasena</a>
+                <form action="/usuarios/<%= item.id %>/toggle-activo" method="POST">
+                  <button
+                    class="button <%= item.activo ? 'button-danger' : 'button-primary' %> button-small button-fit"
+                    type="submit"
+                    <%= usuario && Number(usuario.id) === Number(item.id) ? 'disabled' : '' %>
+                  >
+                    <%= item.activo ? 'Desactivar' : 'Activar' %>
+                  </button>
+                </form>
+              </div>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+</section>

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %> | Monitoreo de Plagas</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body class="app-page">
+  <div class="app-layout">
+    <aside class="sidebar" aria-label="Menu principal">
+      <a class="sidebar-brand" href="/home" aria-label="Ir al inicio">
+        <span class="brand-mark">MP</span>
+        <span>Monitoreo de Plagas</span>
+      </a>
+
+      <nav class="sidebar-nav">
+        <% menuPrincipal.forEach((item) => { %>
+          <a class="sidebar-link <%= item.active ? 'is-active' : '' %> <%= item.type === 'logout' ? 'is-logout' : '' %>" href="<%= item.href %>">
+            <span class="sidebar-icon"><%= item.icon %></span>
+            <span><%= item.label %></span>
+          </a>
+        <% }) %>
+      </nav>
+    </aside>
+
+    <div class="main-area">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Sistema interno</p>
+          <h1><%= title %></h1>
+        </div>
+
+        <% if (usuario) { %>
+          <div class="user-chip" aria-label="Usuario conectado">
+            <span class="user-avatar"><%= usuario.nombre ? usuario.nombre.charAt(0).toUpperCase() : 'U' %></span>
+            <div>
+              <strong><%= usuario.nombre %></strong>
+              <small><%= usuario.rol %><%= usuario.sede ? ' - ' + usuario.sede : '' %></small>
+            </div>
+          </div>
+        <% } %>
+      </header>
+
+      <main class="content-shell">
+        <%- include(contentView) %>
+      </main>
+    </div>
+  </div>
+</body>
+</html>

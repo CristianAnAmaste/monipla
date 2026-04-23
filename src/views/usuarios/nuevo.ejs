@@ -1,0 +1,72 @@
+<section class="page-header">
+  <div>
+    <p class="eyebrow">Administracion</p>
+    <h1>Nuevo usuario</h1>
+    <p>Complete los datos para crear una cuenta de acceso al sistema.</p>
+  </div>
+
+  <a class="button button-secondary" href="/usuarios">Volver al listado</a>
+</section>
+
+<% if (errors && errors.length > 0) { %>
+  <div class="alert" role="alert">
+    <strong>Revise los datos ingresados.</strong>
+    <ul class="message-list">
+      <% errors.forEach((message) => { %>
+        <li><%= message %></li>
+      <% }) %>
+    </ul>
+  </div>
+<% } %>
+
+<section class="form-panel">
+  <form class="form form-grid" action="/usuarios" method="POST" autocomplete="off" novalidate>
+    <div class="form-group">
+      <label for="nombre">Nombre</label>
+      <input id="nombre" name="nombre" type="text" value="<%= values.nombre %>" required>
+    </div>
+
+    <div class="form-group">
+      <label for="correo">Correo</label>
+      <input id="correo" name="correo" type="email" value="<%= values.correo %>" required>
+    </div>
+
+    <div class="form-group">
+      <label for="contrasena">Contrasena</label>
+      <input id="contrasena" name="contrasena" type="password" required>
+    </div>
+
+    <div class="form-group">
+      <label for="confirmarContrasena">Confirmar contrasena</label>
+      <input id="confirmarContrasena" name="confirmarContrasena" type="password" required>
+    </div>
+
+    <div class="form-group">
+      <label for="rol">Rol</label>
+      <select id="rol" name="rol" required>
+        <% opciones.roles.forEach((rol) => { %>
+          <option value="<%= rol %>" <%= values.rol === rol ? 'selected' : '' %>><%= rol %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="sede">Sede</label>
+      <select id="sede" name="sede" required>
+        <% opciones.sedes.forEach((sede) => { %>
+          <option value="<%= sede %>" <%= values.sede === sede ? 'selected' : '' %>><%= sede %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <label class="check-field">
+      <input type="checkbox" name="activo" value="1" <%= values.activo ? 'checked' : '' %>>
+      <span>Usuario activo</span>
+    </label>
+
+    <div class="form-actions">
+      <a class="button button-secondary" href="/usuarios">Cancelar</a>
+      <button class="button button-primary button-fit" type="submit">Crear usuario</button>
+    </div>
+  </form>
+</section>

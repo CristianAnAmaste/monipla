@@ -1,0 +1,25 @@
+<section class="dashboard-hero">
+  <div>
+    <p class="eyebrow">Inicio</p>
+    <h1>Bienvenido al sistema de Monitoreo de Plagas</h1>
+    <p>Panel principal para organizar el registro, seguimiento y administracion de monitoreos.</p>
+  </div>
+
+  <% if (usuario) { %>
+    <div class="session-card">
+      <span>Usuario autenticado</span>
+      <strong><%= usuario.nombre %></strong>
+      <small><%= usuario.rol %><%= usuario.sede ? ' - ' + usuario.sede : '' %></small>
+    </div>
+  <% } %>
+</section>
+
+<section class="dashboard-grid" aria-label="Accesos principales">
+  <% (dashboardCards || []).forEach((card) => { %>
+    <a class="dashboard-card" href="<%= card.href %>">
+      <span class="dashboard-card-mark"><%= card.mark %></span>
+      <h2><%= card.title %></h2>
+      <p><%= card.description %></p>
+    </a>
+  <% }) %>
+</section>
