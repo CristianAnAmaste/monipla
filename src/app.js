@@ -40,6 +40,14 @@ app.use(
 app.use((req, res, next) => {
   res.locals.usuario = req.session.usuario || null;
   res.locals.menuPrincipal = navigationService.buildMenu(req.session.usuario, req.path);
+  res.locals.dashboardCards = [];
+  res.locals.errors = [];
+  res.locals.success = null;
+  res.locals.error = null;
+  res.locals.values = {};
+  res.locals.opciones = {};
+  res.locals.pageTitle = '';
+  res.locals.pageMessage = '';
   next();
 });
 

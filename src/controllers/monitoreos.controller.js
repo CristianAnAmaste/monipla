@@ -6,6 +6,7 @@ class MonitoreosController {
 
     this.nuevo = this.nuevo.bind(this);
     this.crear = this.crear.bind(this);
+    this.obtenerResumenPrevio = this.obtenerResumenPrevio.bind(this);
     this.listarCampos = this.listarCampos.bind(this);
     this.listarVariedades = this.listarVariedades.bind(this);
     this.listarCuarteles = this.listarCuarteles.bind(this);
@@ -55,14 +56,50 @@ class MonitoreosController {
     } catch (error) {
       console.error('Error al validar formulario de monitoreo', error);
 
-      const formulario = await this.monitoreosService.getFormularioData(
-        this.monitoreosService.normalizarEntrada(req.body)
-      );
+      let formulario;
+
+      try {
+        formulario = await this.monitoreosService.getFormularioData(
+          this.monitoreosService.normalizarEntrada(req.body)
+        );
+      } catch (formError) {
+        formulario = {
+          values: this.monitoreosService.normalizarEntrada(req.body),
+          opciones: {
+            fundos: [],
+            estructuras: [],
+          },
+        };
+      }
 
       return this.renderNuevo(res.status(500), {
         ...formulario,
         errors: ['No fue posible procesar el formulario de monitoreo.'],
         success: null,
+      });
+    }
+  }
+
+  async obtenerResumenPrevio(req, res) {
+    try {
+      const result = await this.monitoreosService.obtenerResumenPrevio(req.body);
+
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          errors: result.errors,
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: result.resumen,
+      });
+    } catch (error) {
+      console.error('Error al obtener resumen previo del monitoreo', error);
+      return res.status(500).json({
+        success: false,
+        message: 'No fue posible generar el resumen previo del monitoreo.',
       });
     }
   }

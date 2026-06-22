@@ -1,11 +1,18 @@
 document.addEventListener('DOMContentLoaded', () => {
+  const form = document.getElementById('monitoreo-form');
   const fundoSelect = document.getElementById('genFundo');
   const campoSelect = document.getElementById('genCampo');
   const variedadSelect = document.getElementById('genVariedad');
   const cuartelSelect = document.getElementById('genCuartel');
   const errorBox = document.getElementById('monitoreo-combos-error');
+  const confirmacionInput = document.getElementById('confirmacionResumen');
+  const modal = document.getElementById('monitoreo-confirmacion-modal');
+  const modalError = document.getElementById('monitoreo-modal-error');
+  const modalConfirmButton = document.getElementById('modal-confirmar-submit');
+  const closeModalButtons = document.querySelectorAll('[data-close-modal="true"]');
+  const trackedFields = form.querySelectorAll('select, input, textarea');
 
-  if (!fundoSelect || !campoSelect || !variedadSelect || !cuartelSelect) {
+  if (!form || !fundoSelect || !campoSelect || !variedadSelect || !cuartelSelect) {
     return;
   }
 
@@ -44,6 +51,25 @@ document.addEventListener('DOMContentLoaded', () => {
     errorBox.textContent = '';
   };
 
+  const showModalError = (message) => {
+    if (!modalError) {
+      showError(message);
+      return;
+    }
+
+    modalError.textContent = message;
+    modalError.hidden = false;
+  };
+
+  const hideModalError = () => {
+    if (!modalError) {
+      return;
+    }
+
+    modalError.hidden = true;
+    modalError.textContent = '';
+  };
+
   const fetchOptions = async (url) => {
     const response = await fetch(url, {
       headers: {
@@ -64,8 +90,107 @@ document.addEventListener('DOMContentLoaded', () => {
     return payload.data || [];
   };
 
+  const fetchResumenPrevio = async () => {
+    const formData = new FormData(form);
+    formData.set('confirmacionResumen', '0');
+
+    const response = await fetch('/monitoreos/api/resumen-previo', {
+      method: 'POST',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(Object.fromEntries(formData.entries())),
+    });
+
+    const payload = await response.json();
+
+    if (!response.ok || !payload.success) {
+      const message = Array.isArray(payload.errors)
+        ? payload.errors.join(' ')
+        : payload.message || 'No fue posible generar el resumen previo.';
+
+      throw new Error(message);
+    }
+
+    return payload.data;
+  };
+
+  const formatFecha = (value) => {
+    if (!value) {
+      return '-';
+    }
+
+    const [year, month, day] = value.split('-');
+
+    if (!year || !month || !day) {
+      return value;
+    }
+
+    return `${day}-${month}-${year}`;
+  };
+
+  const setResumenText = (key, value) => {
+    const node = document.querySelector(`[data-resumen="${key}"]`);
+
+    if (!node) {
+      return;
+    }
+
+    node.textContent = value || '-';
+  };
+
+  const renderResumen = (resumen) => {
+    setResumenText('fundo', resumen.ubicacion?.fundo);
+    setResumenText('campo', resumen.ubicacion?.campo);
+    setResumenText('variedad', resumen.ubicacion?.variedad);
+    setResumenText('cuartel', resumen.ubicacion?.cuartel ? `Cuartel ${resumen.ubicacion.cuartel}` : '-');
+    setResumenText('sdp', resumen.resolucion?.sdp);
+    setResumenText('csg', resumen.resolucion?.csg);
+    setResumenText('trazabilidad', resumen.resolucion?.trazabilidad);
+    setResumenText('estructura', resumen.estructura);
+    setResumenText('fechaSolicitudMuestra', formatFecha(resumen.fechas?.solicitudMuestra));
+    setResumenText('fechaRecepcionMuestra', formatFecha(resumen.fechas?.recepcionMuestra));
+    setResumenText('fechaRevisionMuestra', formatFecha(resumen.fechas?.revisionMuestra));
+    setResumenText(
+      'observacionGeneral',
+      resumen.observacionGeneral || 'Sin observacion general registrada.'
+    );
+  };
+
+  const openModal = () => {
+    if (!modal) {
+      return;
+    }
+
+    modal.classList.remove('is-hidden');
+    modal.hidden = false;
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('has-modal-open');
+  };
+
+  const closeModal = () => {
+    if (!modal) {
+      return;
+    }
+
+    modal.classList.add('is-hidden');
+    modal.hidden = true;
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('has-modal-open');
+    hideModalError();
+  };
+
+  const resetConfirmacion = () => {
+    if (confirmacionInput) {
+      confirmacionInput.value = '0';
+    }
+  };
+
   const loadCampos = async (selectedValue = '') => {
     const fundoId = fundoSelect.value;
+
+    resetConfirmacion();
 
     resetSelect(campoSelect, 'Seleccione primero un fundo');
     resetSelect(variedadSelect, 'Seleccione primero un campo');
@@ -84,6 +209,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const loadVariedades = async (selectedValue = '') => {
     const fundoId = fundoSelect.value;
     const campoId = campoSelect.value;
+
+    resetConfirmacion();
 
     resetSelect(variedadSelect, 'Seleccione primero un campo');
     resetSelect(cuartelSelect, 'Seleccione primero una variedad');
@@ -105,6 +232,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const fundoId = fundoSelect.value;
     const campoId = campoSelect.value;
     const variedadId = variedadSelect.value;
+
+    resetConfirmacion();
 
     resetSelect(cuartelSelect, 'Seleccione primero una variedad');
 
@@ -169,6 +298,54 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       hideError();
       await loadCuarteles();
+    } catch (error) {
+      showError(error.message);
+    }
+  });
+
+  closeModalButtons.forEach((button) => {
+    button.addEventListener('click', closeModal);
+  });
+
+  trackedFields.forEach((field) => {
+    field.addEventListener('change', resetConfirmacion);
+    field.addEventListener('input', resetConfirmacion);
+  });
+
+  if (modal) {
+    closeModal();
+
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal) {
+        closeModal();
+      }
+    });
+  }
+
+  if (modalConfirmButton) {
+    modalConfirmButton.addEventListener('click', () => {
+      if (confirmacionInput) {
+        confirmacionInput.value = '1';
+      }
+
+      closeModal();
+      form.submit();
+    });
+  }
+
+  form.addEventListener('submit', async (event) => {
+    if (confirmacionInput && confirmacionInput.value === '1') {
+      return;
+    }
+
+    event.preventDefault();
+    hideError();
+    hideModalError();
+
+    try {
+      const resumen = await fetchResumenPrevio();
+      renderResumen(resumen);
+      openModal();
     } catch (error) {
       showError(error.message);
     }

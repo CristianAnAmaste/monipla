@@ -42,18 +42,57 @@ class MonitoreosService {
   }
 
   async listarCuarteles(genFundo, genCampo, genVariedad) {
-    const fondoId = this.normalizarId(genFundo);
+    const fundoId = this.normalizarId(genFundo);
     const campoId = this.normalizarId(genCampo);
     const variedadId = this.normalizarId(genVariedad);
 
-    if (!fondoId || !campoId || !variedadId) {
+    if (!fundoId || !campoId || !variedadId) {
       return [];
     }
 
-    return this.monitoreosRepository.findCuartelesByFiltros(fondoId, campoId, variedadId);
+    return this.monitoreosRepository.findCuartelesByFiltros(fundoId, campoId, variedadId);
   }
 
   async validarPasoUno(data) {
+    const resolucion = await this.resolverFormulario(data);
+
+    if (!resolucion.success) {
+      return resolucion;
+    }
+
+    if (!this.esConfirmacionValida(data.confirmacionResumen)) {
+      return {
+        success: false,
+        errors: ['Debe confirmar el resumen del monitoreo antes de guardar.'],
+        values: resolucion.values,
+      };
+    }
+
+    return {
+      success: true,
+      values: resolucion.values,
+      origen: resolucion.origen,
+      estructura: resolucion.estructura,
+      resumen: resolucion.resumen,
+      message: 'Confirmacion recibida correctamente. El guardado definitivo del monitoreo se implementara en la siguiente etapa.',
+    };
+  }
+
+  async obtenerResumenPrevio(data) {
+    const resolucion = await this.resolverFormulario(data);
+
+    if (!resolucion.success) {
+      return resolucion;
+    }
+
+    return {
+      success: true,
+      values: resolucion.values,
+      resumen: resolucion.resumen,
+    };
+  }
+
+  async resolverFormulario(data) {
     const values = this.normalizarEntrada(data);
     const errors = [];
 
@@ -120,7 +159,7 @@ class MonitoreosService {
     let origen = null;
 
     if (errors.length === 0) {
-      origen = await this.monitoreosRepository.findOrigenByGenCuartel(values.genCuartel);
+      origen = await this.monitoreosRepository.findResumenByGenCuartel(values.genCuartel);
 
       if (!origen) {
         errors.push('El cuartel seleccionado no tiene una relacion activa para resolver SDP, CSG y trazabilidad.');
@@ -134,12 +173,14 @@ class MonitoreosService {
         || Number(origen.gen_variedad) !== values.genVariedad;
 
       if (seleccionInconsistente) {
-        errors.push('La combinacion selecionada de fundo, campo, variedad y cuartel no es valida.');
+        errors.push('La combinacion seleccionada de fundo, campo, variedad y cuartel no es valida.');
       }
     }
 
+    let estructura = null;
+
     if (errors.length === 0) {
-      const estructura = await this.monitoreosRepository.findEstructuraById(values.idEstructura);
+      estructura = await this.monitoreosRepository.findEstructuraById(values.idEstructura);
 
       if (!estructura || (estructura.activo !== true && estructura.activo !== 1)) {
         errors.push('La estructura seleccionada no esta disponible.');
@@ -158,7 +199,8 @@ class MonitoreosService {
       success: true,
       values,
       origen,
-      message: 'Formulario validado correctamente. El guardado final del monitoreo se implementara en la siguiente etapa.',
+      estructura,
+      resumen: this.buildResumen(values, origen, estructura),
     };
   }
 
@@ -197,6 +239,33 @@ class MonitoreosService {
 
   esFechaValida(value) {
     return /^\d{4}-\d{2}-\d{2}$/.test(value);
+  }
+
+  esConfirmacionValida(value) {
+    return value === '1' || value === 1 || value === true || value === 'true';
+  }
+
+  buildResumen(values, origen, estructura) {
+    return {
+      ubicacion: {
+        fundo: origen.nombre_fundo,
+        campo: origen.nombre_campo,
+        variedad: origen.nombre_variedad,
+        cuartel: origen.codigo_cuartel,
+      },
+      resolucion: {
+        sdp: origen.sdp,
+        csg: origen.csg,
+        trazabilidad: origen.trazabilidad,
+      },
+      estructura: estructura.nombre_estructura,
+      fechas: {
+        solicitudMuestra: values.fechaSolicitudMuestra,
+        recepcionMuestra: values.fechaRecepcionMuestra,
+        revisionMuestra: values.fechaRevisionMuestra,
+      },
+      observacionGeneral: values.observacionGeneral || '',
+    };
   }
 }
 

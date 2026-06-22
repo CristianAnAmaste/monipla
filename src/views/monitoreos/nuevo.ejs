@@ -31,7 +31,9 @@
 <div id="monitoreo-combos-error" class="alert" role="alert" hidden></div>
 
 <section class="form-panel">
-  <form class="form form-grid" action="/monitoreos" method="POST" autocomplete="off" novalidate>
+  <form id="monitoreo-form" class="form form-grid" action="/monitoreos" method="POST" autocomplete="off" novalidate>
+    <input id="confirmacionResumen" name="confirmacionResumen" type="hidden" value="0">
+
     <div class="form-group">
       <label for="genFundo">Fundo</label>
       <select id="genFundo" name="genFundo" data-selected="<%= values.genFundo %>" required>
@@ -122,5 +124,95 @@
     </div>
   </form>
 </section>
+
+<div id="monitoreo-confirmacion-modal" class="modal-shell is-hidden" hidden aria-hidden="true">
+  <div class="modal-backdrop" data-close-modal="true"></div>
+  <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-confirmacion-title">
+    <div class="modal-header">
+      <div>
+        <p class="eyebrow">Confirmacion previa</p>
+        <h2 id="modal-confirmacion-title">Resumen del origen resuelto</h2>
+        <p>Revise la ubicacion y los datos productivos antes de confirmar el guardado del monitoreo.</p>
+      </div>
+      <button class="modal-close" type="button" data-close-modal="true" aria-label="Cerrar resumen">x</button>
+    </div>
+
+    <div id="monitoreo-modal-error" class="alert" role="alert" hidden></div>
+
+    <div class="modal-grid">
+      <section class="summary-panel">
+        <h3>Ubicacion</h3>
+        <dl class="summary-list">
+          <div>
+            <dt>Fundo</dt>
+            <dd data-resumen="fundo">-</dd>
+          </div>
+          <div>
+            <dt>Campo</dt>
+            <dd data-resumen="campo">-</dd>
+          </div>
+          <div>
+            <dt>Variedad</dt>
+            <dd data-resumen="variedad">-</dd>
+          </div>
+          <div>
+            <dt>Cuartel</dt>
+            <dd data-resumen="cuartel">-</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="summary-panel summary-panel-highlight">
+        <h3>Resolucion automatica</h3>
+        <dl class="summary-list">
+          <div>
+            <dt>SDP</dt>
+            <dd data-resumen="sdp">-</dd>
+          </div>
+          <div>
+            <dt>CSG</dt>
+            <dd data-resumen="csg">-</dd>
+          </div>
+          <div>
+            <dt>Trazabilidad</dt>
+            <dd data-resumen="trazabilidad">-</dd>
+          </div>
+          <div>
+            <dt>Estructura</dt>
+            <dd data-resumen="estructura">-</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="summary-panel summary-panel-full">
+        <h3>Fechas seleccionadas</h3>
+        <dl class="summary-list summary-list-inline">
+          <div>
+            <dt>Solicitud muestra</dt>
+            <dd data-resumen="fechaSolicitudMuestra">-</dd>
+          </div>
+          <div>
+            <dt>Recepcion muestra</dt>
+            <dd data-resumen="fechaRecepcionMuestra">-</dd>
+          </div>
+          <div>
+            <dt>Revision muestra</dt>
+            <dd data-resumen="fechaRevisionMuestra">-</dd>
+          </div>
+        </dl>
+      </section>
+    </div>
+
+    <div class="summary-note">
+      <strong>Observacion general</strong>
+      <p data-resumen="observacionGeneral">Sin observacion general registrada.</p>
+    </div>
+
+    <div class="form-actions modal-actions">
+      <button class="button button-secondary button-fit" type="button" data-close-modal="true">Cancelar</button>
+      <button id="modal-confirmar-submit" class="button button-primary button-fit" type="button">Confirmar y guardar</button>
+    </div>
+  </section>
+</div>
 
 <script src="/js/monitoreos-form.js"></script>

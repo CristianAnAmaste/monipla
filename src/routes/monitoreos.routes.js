@@ -7,6 +7,7 @@ const monitoreosController = new MonitoreosController();
 
 router.get('/monitoreos/nuevo', ensureAuthenticated, monitoreosController.nuevo);
 router.post('/monitoreos', ensureAuthenticated, monitoreosController.crear);
+router.post('/monitoreos/api/resumen-previo', ensureAuthenticated, monitoreosController.obtenerResumenPrevio);
 router.get('/monitoreos/api/campos/:genFundo', ensureAuthenticated, monitoreosController.listarCampos);
 router.get(
   '/monitoreos/api/variedades/:genFundo/:genCampo',

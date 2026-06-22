@@ -1,3 +1,5 @@
+<% const cards = typeof dashboardCards !== 'undefined' && Array.isArray(dashboardCards) ? dashboardCards : []; %>
+
 <section class="dashboard-hero">
   <div>
     <p class="eyebrow">Inicio</p>
@@ -15,7 +17,7 @@
 </section>
 
 <section class="dashboard-grid" aria-label="Accesos principales">
-  <% (dashboardCards || []).forEach((card) => { %>
+  <% cards.forEach((card) => { %>
     <a class="dashboard-card" href="<%= card.href %>">
       <span class="dashboard-card-mark"><%= card.mark %></span>
       <h2><%= card.title %></h2>
