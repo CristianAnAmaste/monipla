@@ -903,6 +903,32 @@ select:focus {
   min-height: 40px;
 }
 
+.resultado-validacion-panel {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(155, 28, 22, 0.2);
+  border-radius: 8px;
+  color: var(--danger-text);
+  background: var(--danger-bg);
+}
+
+.resultado-row-error td {
+  background: #fff8f7;
+}
+
+.result-table .campo-error {
+  border-color: var(--danger-text);
+  box-shadow: 0 0 0 3px rgba(155, 28, 22, 0.12);
+}
+
+.mensaje-error-fila {
+  margin: 8px 0 0;
+  color: var(--danger-text);
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
 .result-actions {
   margin-top: 0;
 }
@@ -917,6 +943,91 @@ select:focus {
 
 .result-totals .message-list {
   margin-top: 8px;
+}
+
+.evidencia-panel {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.evidencia-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.evidencia-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8faf9;
+}
+
+.evidencia-card-error {
+  border-color: rgba(155, 28, 22, 0.42);
+  background: #fff8f7;
+}
+
+.evidencia-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.evidencia-file {
+  display: grid;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.evidencia-file span {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--primary-dark);
+  font-weight: 700;
+  background: #ffffff;
+}
+
+.evidencia-file input {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+}
+
+.evidencia-preview {
+  display: grid;
+  min-height: 150px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  color: var(--muted);
+  background: #ffffff;
+}
+
+.evidencia-preview img {
+  width: 100%;
+  height: 150px;
+  object-fit: cover;
+}
+
+.evidencia-meta {
+  min-height: 20px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
 }
 
 .total-chip {
@@ -961,7 +1072,8 @@ select:focus {
   }
 
   .modal-grid,
-  .summary-list-inline {
+  .summary-list-inline,
+  .evidencia-grid {
     grid-template-columns: 1fr;
   }
 }

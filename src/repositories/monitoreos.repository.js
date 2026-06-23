@@ -618,6 +618,88 @@ class MonitoreosRepository {
     return result.recordset[0];
   }
 
+  async contarImagenesMuestreo(idMuestreo, transaction) {
+    const request = await this.createRequest(transaction);
+
+    const result = await request
+      .input('idMuestreo', sql.Int, idMuestreo)
+      .query(`
+        SELECT COUNT(1) AS total
+        FROM dbo.MONIPLA_IMAGEN WITH (UPDLOCK, HOLDLOCK)
+        WHERE id_muestreo = @idMuestreo
+      `);
+
+    return Number(result.recordset[0].total || 0);
+  }
+
+  async insertarImagenMuestreo(idMuestreo, imagen, transaction) {
+    const request = await this.createRequest(transaction);
+
+    const result = await request
+      .input('idMuestreo', sql.Int, idMuestreo)
+      .input('orden', sql.TinyInt, imagen.orden)
+      .input('imagen', sql.VarBinary(sql.MAX), imagen.buffer)
+      .input('mime', sql.VarChar(30), imagen.mime)
+      .input('comentario', sql.VarChar(400), imagen.comentario || null)
+      .query(`
+        INSERT INTO dbo.MONIPLA_IMAGEN (
+          id_muestreo,
+          orden,
+          imagen,
+          mime,
+          comentario,
+          fecha_creacion
+        )
+        OUTPUT INSERTED.id_imagen
+        VALUES (
+          @idMuestreo,
+          @orden,
+          @imagen,
+          @mime,
+          @comentario,
+          SYSDATETIME()
+        )
+      `);
+
+    return result.recordset[0];
+  }
+
+  async insertarImagenesMuestreo(idMuestreo, imagenes, transaction) {
+    if (!Array.isArray(imagenes) || imagenes.length === 0) {
+      return [];
+    }
+
+    const totalExistentes = await this.contarImagenesMuestreo(idMuestreo, transaction);
+
+    if (totalExistentes > 0) {
+      throw new Error('IMAGENES_YA_REGISTRADAS');
+    }
+
+    const insertadas = [];
+
+    for (const imagen of imagenes) {
+      try {
+        const resultado = await this.insertarImagenMuestreo(idMuestreo, imagen, transaction);
+        insertadas.push(resultado.id_imagen);
+      } catch (error) {
+        console.error('[MONIPLA][IMAGENES][ERROR]', {
+          idMuestreo,
+          orden: imagen.orden,
+          error: error.message,
+        });
+
+        throw error;
+      }
+    }
+
+    console.info('[MONIPLA][IMAGENES][INSERTADAS]', {
+      idMuestreo,
+      totalImagenes: insertadas.length,
+    });
+
+    return insertadas;
+  }
+
   async guardarResultadosMuestreoTransaccional(idMuestreo, plagas, metadata) {
     const pool = await poolPromise;
     const transaction = new sql.Transaction(pool);
@@ -686,6 +768,12 @@ class MonitoreosRepository {
         transaction
       );
 
+      const imagenesInsertadas = await this.insertarImagenesMuestreo(
+        idMuestreo,
+        metadata.imagenes || [],
+        transaction
+      );
+
       await transaction.commit();
 
       console.info('[MONIPLA][RESULTADOS][TX_COMMIT]', {
@@ -697,6 +785,7 @@ class MonitoreosRepository {
         id_muestreo: muestreo.id_muestreo,
         numero_muestreo: muestreo.numero_muestreo,
         resultados,
+        imagenes_insertadas: imagenesInsertadas.length,
       };
     } catch (error) {
       if (transactionStarted) {
@@ -746,6 +835,12 @@ class MonitoreosRepository {
         transaction
       );
 
+      const imagenesInsertadas = await this.insertarImagenesMuestreo(
+        idMuestreo,
+        data.imagenes || [],
+        transaction
+      );
+
       await transaction.commit();
 
       console.info('[MONIPLA][RESULTADOS][TX_COMMIT]', {
@@ -756,6 +851,7 @@ class MonitoreosRepository {
       return {
         id_muestreo: muestreo.id_muestreo,
         numero_muestreo: muestreo.numero_muestreo,
+        imagenes_insertadas: imagenesInsertadas.length,
       };
     } catch (error) {
       if (transactionStarted) {

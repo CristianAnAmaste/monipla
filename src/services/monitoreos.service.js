@@ -1,4 +1,11 @@
+const sharp = require('sharp');
 const MonitoreosRepository = require('../repositories/monitoreos.repository');
+
+const MIMES_IMAGEN_PERMITIDOS = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const MAX_IMAGENES_MONITOREO = 3;
+const MAX_BYTES_IMAGEN_ORIGINAL = 8 * 1024 * 1024;
+const MAX_BYTES_IMAGEN_PROCESADA = 800 * 1024;
+const MAX_COMENTARIO_IMAGEN = 400;
 
 class MonitoreosService {
   constructor(monitoreosRepository = new MonitoreosRepository()) {
@@ -159,15 +166,17 @@ class MonitoreosService {
     };
   }
 
-  async guardarResultadosMuestreo(idMuestreo, body, usuarioSesion) {
+  async guardarResultadosMuestreo(idMuestreo, body, usuarioSesion, archivos = {}) {
     const muestreoId = this.normalizarId(idMuestreo);
     const values = this.normalizarResultadosEntrada(body);
+    const imagenesRecibidas = this.contarImagenesRecibidas(archivos.files);
 
     console.info('[MONIPLA][RESULTADOS][SERVICE]', {
       evento: 'INICIO_VALIDACION',
       idMuestreo: muestreoId || idMuestreo,
       modo: values.modoResultado,
       filasRecibidas: Array.isArray(values.resultados) ? values.resultados.length : 0,
+      imagenesRecibidas,
     });
 
     if (!muestreoId) {
@@ -217,6 +226,10 @@ class MonitoreosService {
 
     const errors = [];
 
+    if (archivos.uploadError) {
+      errors.push(this.formatearErrorCargaImagen(archivos.uploadError));
+    }
+
     if (!['SIN_PLAGAS', 'CON_PLAGAS'].includes(values.modoResultado)) {
       errors.push('Debe seleccionar si el monitoreo tiene plagas detectadas.');
     }
@@ -240,12 +253,31 @@ class MonitoreosService {
         };
       }
 
+      let imagenesProcesadas;
+
+      try {
+        imagenesProcesadas = await this.procesarImagenesResultados(archivos.files, body, muestreoId);
+      } catch (error) {
+        console.error('[MONIPLA][IMAGENES][ERROR]', {
+          idMuestreo: muestreoId,
+          error: error.message,
+        });
+
+        return {
+          success: false,
+          errors: [error.userMessage || 'No fue posible procesar las imagenes adjuntas.'],
+          values,
+        };
+      }
+
+
       try {
         const resultado = await this.monitoreosRepository.guardarSinPlagasMuestreoTransaccional(
           muestreoId,
           {
             observacionResultado: values.observacionResultado || null,
             idUsuarioResultado,
+            imagenes: imagenesProcesadas,
           }
         );
 
@@ -255,12 +287,21 @@ class MonitoreosService {
           id_muestreo: resultado.id_muestreo,
           numero_muestreo: resultado.numero_muestreo,
           estado_resultado: 'SIN_PLAGAS',
+          imagenes_insertadas: resultado.imagenes_insertadas || 0,
         };
       } catch (error) {
         if (error.message === 'RESULTADOS_YA_REGISTRADOS') {
           return {
             success: false,
             errors: ['Este muestreo ya tiene resultados registrados. La edición se implementará en una etapa posterior.'],
+            values,
+          };
+        }
+
+        if (error.message === 'IMAGENES_YA_REGISTRADAS') {
+          return {
+            success: false,
+            errors: ['Este muestreo ya tiene imagenes registradas. La edicion se implementara en una etapa posterior.'],
             values,
           };
         }
@@ -272,126 +313,28 @@ class MonitoreosService {
     const plagasActivas = new Set(formulario.opciones.plagas.map((item) => Number(item.value)));
     const estadiosActivos = new Set(formulario.opciones.estadios.map((item) => Number(item.value)));
     const estadosActivos = new Set(formulario.opciones.estados.map((item) => Number(item.value)));
-    const plagasLimpias = [];
-    const plagasUsadas = new Set();
-    const resultadosAgrupados = this.agruparResultadosPlanos(values.resultados);
-    const plagasParaValidar = resultadosAgrupados.length > 0 ? resultadosAgrupados : values.plagas;
-
-    plagasParaValidar.forEach((plaga, plagaIndex) => {
-      const tieneDatosPlaga = plaga.idPlaga
-        || plaga.detalleTexto
-        || plaga.observacion
-        || plaga.conteos.some((conteo) => (
-          conteo.idEstadio || conteo.idEstadoEjemplar || conteo.cantidad
-        ));
-
-      if (!tieneDatosPlaga) {
-        return;
-      }
-
-      const numeroPlaga = plagaIndex + 1;
-      const idPlaga = this.normalizarIdEstricto(plaga.idPlaga);
-
-      if (!idPlaga) {
-        errors.push(`Debe seleccionar una plaga en el bloque ${numeroPlaga}.`);
-      } else if (!plagasActivas.has(idPlaga)) {
-        errors.push(`La plaga seleccionada en el bloque ${numeroPlaga} no esta disponible.`);
-      } else if (plagasUsadas.has(idPlaga)) {
-        errors.push(`La plaga del bloque ${numeroPlaga} ya fue ingresada en otro bloque.`);
-      }
-
-      if (plaga.detalleTexto.length > 500) {
-        errors.push(`El detalle del bloque ${numeroPlaga} no puede superar los 500 caracteres.`);
-      }
-
-      if (plaga.observacion.length > 500) {
-        errors.push(`La observacion del bloque ${numeroPlaga} no puede superar los 500 caracteres.`);
-      }
-
-      const conteosLimpios = [];
-      const combinacionesConteo = new Set();
-
-      plaga.conteos.forEach((conteo, conteoIndex) => {
-        const tieneDatosConteo = conteo.idEstadio || conteo.idEstadoEjemplar || conteo.cantidad;
-
-        if (!tieneDatosConteo) {
-          return;
-        }
-
-        const numeroConteo = conteoIndex + 1;
-        const cantidadCruda = String(conteo.cantidad || '').trim();
-
-        if (cantidadCruda === '0') {
-          return;
-        }
-
-        const idEstadio = this.normalizarIdEstricto(conteo.idEstadio);
-        const idEstadoEjemplar = this.normalizarIdEstricto(conteo.idEstadoEjemplar);
-        const cantidad = this.normalizarCantidad(cantidadCruda);
-
-        if (!idEstadio) {
-          errors.push(`Debe seleccionar un estadio en el conteo ${numeroConteo} del bloque ${numeroPlaga}.`);
-        } else if (!estadiosActivos.has(idEstadio)) {
-          errors.push(`El estadio del conteo ${numeroConteo} del bloque ${numeroPlaga} no esta disponible.`);
-        }
-
-        if (!idEstadoEjemplar) {
-          errors.push(`Debe seleccionar un estado en el conteo ${numeroConteo} del bloque ${numeroPlaga}.`);
-        } else if (!estadosActivos.has(idEstadoEjemplar)) {
-          errors.push(`El estado del conteo ${numeroConteo} del bloque ${numeroPlaga} no esta disponible.`);
-        }
-
-        if (cantidad === null) {
-          errors.push(`La cantidad del conteo ${numeroConteo} del bloque ${numeroPlaga} debe ser un entero positivo.`);
-        }
-
-        if (!idEstadio || !idEstadoEjemplar || cantidad === null) {
-          return;
-        }
-
-        const claveConteo = `${idEstadio}:${idEstadoEjemplar}`;
-
-        if (combinacionesConteo.has(claveConteo)) {
-          errors.push('Hay conteos duplicados para la misma plaga, estadio y estado.');
-          return;
-        }
-
-        combinacionesConteo.add(claveConteo);
-        conteosLimpios.push({
-          idEstadio,
-          idEstadoEjemplar,
-          cantidad,
-        });
-      });
-
-      if (conteosLimpios.length === 0) {
-        errors.push(`Debe ingresar al menos un conteo valido para la plaga del bloque ${numeroPlaga}.`);
-      }
-
-      if (idPlaga) {
-        plagasUsadas.add(idPlaga);
-      }
-
-      const cantidadTotal = conteosLimpios.reduce((total, conteo) => total + conteo.cantidad, 0);
-
-      plagasLimpias.push({
-        idPlaga,
-        detalleTexto: plaga.detalleTexto || null,
-        observacion: plaga.observacion || null,
-        cantidadTotal,
-        conteos: conteosLimpios,
-      });
+    const validacionFilas = this.validarResultadosPlanos(values.resultados, {
+      plagasActivas,
+      estadiosActivos,
+      estadosActivos,
     });
 
-    if (plagasLimpias.length === 0) {
-      errors.push('Debe ingresar al menos una plaga con conteos validos.');
-    }
+    errors.push(...validacionFilas.errors);
+
+    console.info('[MONIPLA][RESULTADOS][FILAS_RECIBIDAS]', {
+      totalFilas: validacionFilas.totalFilas,
+      filasConDatos: validacionFilas.filasConDatos,
+      filasValidas: validacionFilas.filasValidas.length,
+      filasInvalidas: validacionFilas.filasInvalidas,
+    });
+
+    const plagasLimpias = this.agruparFilasResultadosValidas(validacionFilas.filasValidas);
 
     if (errors.length > 0) {
-      console.info('[MONIPLA][RESULTADOS][SERVICE]', {
-        evento: 'VALIDACION_ERROR',
+      console.info('[MONIPLA][RESULTADOS][VALIDACION_ERROR]', {
         idMuestreo: muestreoId,
         errores: errors,
+        filasRecibidas: validacionFilas.totalFilas,
       });
 
       return {
@@ -403,6 +346,22 @@ class MonitoreosService {
 
     let resultado;
     const conteosValidos = plagasLimpias.reduce((total, plaga) => total + plaga.conteos.length, 0);
+    let imagenesProcesadas;
+
+    try {
+      imagenesProcesadas = await this.procesarImagenesResultados(archivos.files, body, muestreoId);
+    } catch (error) {
+      console.error('[MONIPLA][IMAGENES][ERROR]', {
+        idMuestreo: muestreoId,
+        error: error.message,
+      });
+
+      return {
+        success: false,
+        errors: [error.userMessage || 'No fue posible procesar las imagenes adjuntas.'],
+        values,
+      };
+    }
 
     console.info('[MONIPLA][RESULTADOS][SERVICE]', {
       evento: 'VALIDACION_OK',
@@ -417,6 +376,7 @@ class MonitoreosService {
         plagasLimpias,
         {
           idUsuarioResultado,
+          imagenes: imagenesProcesadas,
         }
       );
     } catch (error) {
@@ -434,6 +394,14 @@ class MonitoreosService {
         };
       }
 
+      if (error.message === 'IMAGENES_YA_REGISTRADAS') {
+        return {
+          success: false,
+          errors: ['Este muestreo ya tiene imagenes registradas. La edicion se implementara en una etapa posterior.'],
+          values,
+        };
+      }
+
       throw error;
     }
 
@@ -443,6 +411,7 @@ class MonitoreosService {
       id_muestreo: resultado.id_muestreo,
       numero_muestreo: resultado.numero_muestreo,
       estado_resultado: 'CON_PLAGAS',
+      imagenes_insertadas: resultado.imagenes_insertadas || 0,
     };
   }
 
@@ -634,7 +603,10 @@ class MonitoreosService {
           ? parsed.modoResultado
           : this.normalizarModoResultado(data.modoResultado),
         observacionResultado: String(parsed.observacionResultado || data.observacionResultado || '').trim(),
-        resultados: resultados.map((fila) => ({
+        resultados: resultados.map((fila, index) => ({
+          numeroFila: Number.isInteger(Number(fila.numeroFila)) && Number(fila.numeroFila) > 0
+            ? Number(fila.numeroFila)
+            : index + 1,
           idPlaga: String(fila.idPlaga || '').trim(),
           idEstadio: String(fila.idEstadio || '').trim(),
           idEstadoEjemplar: String(fila.idEstadoEjemplar || '').trim(),
@@ -668,6 +640,286 @@ class MonitoreosService {
     }
 
     return '';
+  }
+
+  contarImagenesRecibidas(files) {
+    if (!files || typeof files !== 'object') {
+      return 0;
+    }
+
+    return ['imagen1', 'imagen2', 'imagen3'].reduce((total, fieldName) => {
+      const fieldFiles = Array.isArray(files[fieldName]) ? files[fieldName] : [];
+      return total + fieldFiles.length;
+    }, 0);
+  }
+
+  formatearErrorCargaImagen(error) {
+    if (!error) {
+      return '';
+    }
+
+    if (error.code === 'LIMIT_FILE_SIZE') {
+      return 'Cada imagen debe pesar como maximo 8 MB antes de comprimirla.';
+    }
+
+    if (error.code === 'LIMIT_FILE_COUNT' || error.code === 'LIMIT_UNEXPECTED_FILE') {
+      return 'Puede adjuntar hasta 3 imagenes de evidencia.';
+    }
+
+    return error.message || 'No fue posible recibir las imagenes adjuntas.';
+  }
+
+  obtenerComentarioImagen(body, orden) {
+    if (!body) {
+      return '';
+    }
+
+    if (body.comentariosImagen && typeof body.comentariosImagen === 'object') {
+      return String(body.comentariosImagen[orden] || '').trim();
+    }
+
+    return String(body[`comentariosImagen[${orden}]`] || '').trim();
+  }
+
+  async procesarImagenesResultados(files, body, idMuestreo) {
+    const imagenes = [];
+    const totalImagenes = this.contarImagenesRecibidas(files);
+
+    console.info('[MONIPLA][IMAGENES][RECIBIDAS]', {
+      idMuestreo,
+      totalImagenes,
+    });
+
+    if (totalImagenes > MAX_IMAGENES_MONITOREO) {
+      const error = new Error('MAX_IMAGENES_EXCEDIDO');
+      error.userMessage = 'Puede adjuntar hasta 3 imagenes de evidencia.';
+      throw error;
+    }
+
+    for (let orden = 1; orden <= MAX_IMAGENES_MONITOREO; orden += 1) {
+      const fieldName = `imagen${orden}`;
+      const file = Array.isArray(files && files[fieldName]) ? files[fieldName][0] : null;
+      const comentario = this.obtenerComentarioImagen(body, orden);
+
+      if (comentario.length > MAX_COMENTARIO_IMAGEN) {
+        const error = new Error('COMENTARIO_IMAGEN_LARGO');
+        error.userMessage = `Evidencia ${orden}: el comentario no puede superar los ${MAX_COMENTARIO_IMAGEN} caracteres.`;
+        throw error;
+      }
+
+      if (!file) {
+        continue;
+      }
+
+      if (!MIMES_IMAGEN_PERMITIDOS.has(file.mimetype)) {
+        const error = new Error('MIME_IMAGEN_INVALIDO');
+        error.userMessage = `Evidencia ${orden}: solo se permiten imagenes JPG, PNG o WebP.`;
+        throw error;
+      }
+
+      if (!file.buffer || file.buffer.length === 0) {
+        const error = new Error('IMAGEN_VACIA');
+        error.userMessage = `Evidencia ${orden}: la imagen esta vacia o no pudo leerse.`;
+        throw error;
+      }
+
+      if (file.size > MAX_BYTES_IMAGEN_ORIGINAL) {
+        const error = new Error('IMAGEN_ORIGINAL_PESADA');
+        error.userMessage = `Evidencia ${orden}: la imagen supera el maximo de 8 MB permitido.`;
+        throw error;
+      }
+
+      const procesada = await this.comprimirImagen(file, orden);
+
+      console.info('[MONIPLA][IMAGENES][PROCESADA]', {
+        orden,
+        mimeOriginal: file.mimetype,
+        bytesOriginal: file.size,
+        mimeFinal: procesada.mime,
+        bytesFinal: procesada.buffer.length,
+      });
+
+      imagenes.push({
+        orden,
+        buffer: procesada.buffer,
+        mime: procesada.mime,
+        comentario: comentario || null,
+      });
+    }
+
+    return imagenes;
+  }
+
+  async comprimirImagen(file, orden) {
+    try {
+      const base = sharp(file.buffer, {
+        failOn: 'warning',
+      })
+        .rotate()
+        .resize({
+          width: 1280,
+          height: 1280,
+          fit: 'inside',
+          withoutEnlargement: true,
+        });
+
+      const webpBuffer = await base.clone().webp({ quality: 65 }).toBuffer();
+
+      if (webpBuffer.length <= MAX_BYTES_IMAGEN_PROCESADA) {
+        return {
+          buffer: webpBuffer,
+          mime: 'image/webp',
+        };
+      }
+
+      const jpegBuffer = await base.clone().jpeg({ quality: 70, progressive: true }).toBuffer();
+      const mejorBuffer = jpegBuffer.length < webpBuffer.length ? jpegBuffer : webpBuffer;
+      const mejorMime = jpegBuffer.length < webpBuffer.length ? 'image/jpeg' : 'image/webp';
+
+      if (mejorBuffer.length > MAX_BYTES_IMAGEN_PROCESADA) {
+        const error = new Error('IMAGEN_PROCESADA_PESADA');
+        error.userMessage = `Evidencia ${orden}: la imagen es demasiado pesada incluso despues de comprimirla.`;
+        throw error;
+      }
+
+      return {
+        buffer: mejorBuffer,
+        mime: mejorMime,
+      };
+    } catch (error) {
+      if (error.userMessage) {
+        throw error;
+      }
+
+      const procesarError = new Error(`ERROR_COMPRESION_IMAGEN: ${error.message}`);
+      procesarError.userMessage = `Evidencia ${orden}: no fue posible procesar la imagen.`;
+      throw procesarError;
+    }
+  }
+
+  validarResultadosPlanos(resultados, catalogos) {
+    const filas = Array.isArray(resultados) ? resultados : [];
+    const errors = [];
+    const filasValidas = [];
+    const clavesUsadas = new Set();
+    let filasConDatos = 0;
+
+    filas.forEach((fila, index) => {
+      const numeroFila = Number(fila.numeroFila) || index + 1;
+      const tieneDatos = fila.idPlaga || fila.idEstadio || fila.idEstadoEjemplar || fila.cantidad;
+
+      if (!tieneDatos) {
+        return;
+      }
+
+      filasConDatos += 1;
+
+      const idPlaga = this.normalizarIdEstricto(fila.idPlaga);
+      const idEstadio = this.normalizarIdEstricto(fila.idEstadio);
+      const idEstadoEjemplar = this.normalizarIdEstricto(fila.idEstadoEjemplar);
+      const cantidadCruda = String(fila.cantidad || '').trim();
+      const cantidad = this.normalizarCantidad(cantidadCruda);
+      let filaValida = true;
+
+      if (!idPlaga) {
+        errors.push(`Fila ${numeroFila}: seleccione una plaga o elimine la fila.`);
+        filaValida = false;
+      } else if (!catalogos.plagasActivas.has(idPlaga)) {
+        errors.push(`Fila ${numeroFila}: la plaga seleccionada no esta disponible.`);
+        filaValida = false;
+      }
+
+      if (!idEstadio) {
+        errors.push(`Fila ${numeroFila}: debe seleccionar un estadio.`);
+        filaValida = false;
+      } else if (!catalogos.estadiosActivos.has(idEstadio)) {
+        errors.push(`Fila ${numeroFila}: el estadio seleccionado no esta disponible.`);
+        filaValida = false;
+      }
+
+      if (!idEstadoEjemplar) {
+        errors.push(`Fila ${numeroFila}: debe seleccionar un estado.`);
+        filaValida = false;
+      } else if (!catalogos.estadosActivos.has(idEstadoEjemplar)) {
+        errors.push(`Fila ${numeroFila}: el estado seleccionado no esta disponible.`);
+        filaValida = false;
+      }
+
+      if (!cantidadCruda) {
+        errors.push(`Fila ${numeroFila}: debe ingresar una cantidad.`);
+        filaValida = false;
+      } else if (!/^\d+$/.test(cantidadCruda)) {
+        errors.push(`Fila ${numeroFila}: la cantidad debe ser un entero positivo.`);
+        filaValida = false;
+      } else if (Number.parseInt(cantidadCruda, 10) <= 0) {
+        errors.push(`Fila ${numeroFila}: la cantidad debe ser mayor a 0 o elimine la fila.`);
+        filaValida = false;
+      } else if (cantidad === null) {
+        errors.push(`Fila ${numeroFila}: la cantidad debe ser un entero positivo.`);
+        filaValida = false;
+      }
+
+      if (!filaValida) {
+        return;
+      }
+
+      const claveConteo = `${idPlaga}:${idEstadio}:${idEstadoEjemplar}`;
+
+      if (clavesUsadas.has(claveConteo)) {
+        errors.push(`Fila ${numeroFila}: ya existe un conteo para esta misma plaga, estadio y estado.`);
+        return;
+      }
+
+      clavesUsadas.add(claveConteo);
+      filasValidas.push({
+        numeroFila,
+        idPlaga,
+        idEstadio,
+        idEstadoEjemplar,
+        cantidad,
+      });
+    });
+
+    if (filasConDatos === 0) {
+      errors.push('Debe ingresar al menos una fila completa de hallazgo.');
+    }
+
+    return {
+      errors,
+      filasValidas,
+      totalFilas: filas.length,
+      filasConDatos,
+      filasInvalidas: errors.length > 0 ? filasConDatos - filasValidas.length : 0,
+    };
+  }
+
+  agruparFilasResultadosValidas(filasValidas) {
+    const agrupadas = [];
+    const indicesPorPlaga = new Map();
+
+    filasValidas.forEach((fila) => {
+      if (!indicesPorPlaga.has(fila.idPlaga)) {
+        indicesPorPlaga.set(fila.idPlaga, agrupadas.length);
+        agrupadas.push({
+          idPlaga: fila.idPlaga,
+          detalleTexto: null,
+          observacion: null,
+          cantidadTotal: 0,
+          conteos: [],
+        });
+      }
+
+      const plaga = agrupadas[indicesPorPlaga.get(fila.idPlaga)];
+
+      plaga.conteos.push({
+        idEstadio: fila.idEstadio,
+        idEstadoEjemplar: fila.idEstadoEjemplar,
+        cantidad: fila.cantidad,
+      });
+      plaga.cantidadTotal += fila.cantidad;
+    });
+
+    return agrupadas;
   }
 
   agruparResultadosPlanos(resultados) {

@@ -151,3 +151,61 @@ El flujo SIN_PLAGAS queda claro para el usuario despues del guardado correcto y 
 Pendientes:
 Probar manualmente con datos reales y definir una vista futura de solo lectura para consultar resultados CON_PLAGAS con detalle.
 
+## 2026-06-23
+
+Modulo:
+Registrar Monitoreo - validacion UX de planilla de resultados.
+
+Archivos modificados:
+
+* AGENT.md
+* CHANGELOG_AI.md
+* src/controllers/monitoreos.controller.js
+* src/public/css/styles.css
+* src/public/js/monitoreos-resultados.js
+* src/services/monitoreos.service.js
+* src/views/monitoreos/resultados.ejs
+
+Motivo:
+Corregir mensajes y comportamiento de validacion para que coincidan con la planilla unica de hallazgos.
+
+Resumen tecnico:
+El frontend valida filas visibles antes de enviar, marca la fila y el campo con error, enfoca el primer campo invalido, excluye filas incompletas del total por plaga y evita el envio cuando hay datos parciales. El backend valida primero filas planas con numero de fila original y solo despues agrupa filas validas por plaga. Los mensajes dejan de hablar de bloques/conteos y usan "Fila X". Se agregaron logs de validacion y resumen de filas recibidas con prefijo [MONIPLA][RESULTADOS].
+
+Impacto:
+La experiencia de captura queda alineada con la tabla plana. La seguridad backend se mantiene aunque el frontend sea omitido. No se tocaron base de datos, edicion, historial ni PDF.
+
+Pendientes:
+Probar manualmente en navegador con datos reales y revisar futura vista de detalle/historial.
+
+## 2026-06-23
+
+Modulo:
+Registrar Monitoreo - evidencia fotografica.
+
+Archivos modificados:
+
+* AGENT.md
+* CHANGELOG_AI.md
+* package.json
+* package-lock.json
+* src/controllers/monitoreos.controller.js
+* src/public/css/styles.css
+* src/public/js/monitoreos-resultados.js
+* src/repositories/monitoreos.repository.js
+* src/routes/monitoreos.routes.js
+* src/services/monitoreos.service.js
+* src/views/monitoreos/resultados.ejs
+
+Motivo:
+Permitir adjuntar hasta 3 imagenes de evidencia por monitoreo al guardar resultados, sin base64 y con compresion previa.
+
+Resumen tecnico:
+Se agregaron multer y sharp. El POST de resultados acepta multipart en memoria con tres slots de evidencia. La vista muestra tres cuadros fijos con preview, comentario y boton quitar. El service valida MIME, tamano original, comentario y comprime con sharp usando rotate, resize maximo 1280x1280 y salida WebP/JPEG bajo limite. El repository inserta MONIPLA_IMAGEN con sql.VarBinary(sql.MAX) dentro de la misma transaccion de resultados. Se agregaron logs [MONIPLA][IMAGENES].
+
+Impacto:
+SIN_PLAGAS y CON_PLAGAS pueden guardar evidencia opcional asociada al id_muestreo con rollback conjunto. No se implemento edicion, eliminacion, PDF, historial ni visualizacion de imagenes guardadas.
+
+Pendientes:
+Probar manualmente con imagenes reales de terreno y definir endpoint/vista de lectura para historial o detalle.
+

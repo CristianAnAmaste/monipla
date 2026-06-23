@@ -97,7 +97,7 @@
 
 <% if (estaPendiente) { %>
   <section class="form-panel">
-    <form id="monitoreo-resultados-form" class="form" action="/monitoreos/<%= muestreo.id_muestreo %>/resultados" method="POST" autocomplete="off" novalidate>
+    <form id="monitoreo-resultados-form" class="form" action="/monitoreos/<%= muestreo.id_muestreo %>/resultados" method="POST" autocomplete="off" enctype="multipart/form-data" novalidate>
       <input id="resultadosPayload" name="resultadosPayload" type="hidden">
 
       <section class="result-mode-panel">
@@ -143,6 +143,11 @@
         </div>
 
         <div class="table-wrap result-table-wrap">
+          <div id="resultados-validacion-panel" class="resultado-validacion-panel" role="alert" hidden>
+            <strong>Revise la planilla de hallazgos.</strong>
+            <ul id="resultados-validacion-lista" class="message-list"></ul>
+          </div>
+
           <table class="data-table result-table result-flat-table">
             <thead>
               <tr>
@@ -160,6 +165,54 @@
         <div class="result-totals">
           <strong>Total por plaga</strong>
           <ul id="total-por-plaga" class="message-list"></ul>
+        </div>
+      </section>
+
+      <section id="evidencia-panel" class="form-group form-group-full evidencia-panel">
+        <div class="result-card-header">
+          <div>
+            <p class="eyebrow">Evidencia</p>
+            <h2>Evidencia del monitoreo</h2>
+            <p>Puede adjuntar hasta 3 imagenes comprimidas como evidencia del trabajo realizado.</p>
+          </div>
+        </div>
+
+        <div class="evidencia-grid">
+          <% [1, 2, 3].forEach((orden) => { %>
+            <section class="evidencia-card" data-evidencia-slot="<%= orden %>">
+              <div class="evidencia-card-header">
+                <strong>Evidencia <%= orden %></strong>
+                <button class="button button-secondary button-small" type="button" data-action="remove-image" data-slot="<%= orden %>" disabled>Quitar</button>
+              </div>
+
+              <label class="evidencia-file">
+                <span>Seleccionar imagen</span>
+                <input
+                  id="imagen<%= orden %>"
+                  name="imagen<%= orden %>"
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  data-image-input="<%= orden %>"
+                >
+              </label>
+
+              <div class="evidencia-preview" data-image-preview="<%= orden %>">
+                <span>Sin imagen seleccionada</span>
+              </div>
+
+              <p class="evidencia-meta" data-image-meta="<%= orden %>"></p>
+
+              <label for="comentarioImagen<%= orden %>">Comentario opcional</label>
+              <textarea
+                id="comentarioImagen<%= orden %>"
+                name="comentariosImagen[<%= orden %>]"
+                rows="2"
+                maxlength="400"
+                placeholder="Comentario de la evidencia"
+              ></textarea>
+            </section>
+          <% }) %>
         </div>
       </section>
 

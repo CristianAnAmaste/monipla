@@ -123,23 +123,35 @@ class MonitoreosController {
       const filasRecibidas = Array.isArray(payload.resultados)
         ? payload.resultados.length
         : payload.plagas.reduce((total, plaga) => total + plaga.conteos.length, 0);
+      const imagenesRecibidas = this.monitoreosService.contarImagenesRecibidas(req.files);
 
       console.info('[MONIPLA][RESULTADOS][POST]', {
         idMuestreo: req.params.idMuestreo,
         modo: payload.modoResultado,
         idUsuario: req.session.usuario && req.session.usuario.id,
         filasRecibidas,
+        imagenesRecibidas,
       });
 
       const result = await this.monitoreosService.guardarResultadosMuestreo(
         req.params.idMuestreo,
         req.body,
-        req.session.usuario
+        req.session.usuario,
+        {
+          files: req.files,
+          uploadError: req.uploadImagenesError,
+        }
       );
 
       const formulario = await this.monitoreosService.obtenerFormularioResultados(req.params.idMuestreo);
 
       if (!result.success) {
+        console.info('[MONIPLA][RESULTADOS][VALIDACION_ERROR]', {
+          idMuestreo: req.params.idMuestreo,
+          errores: result.errors,
+          filasRecibidas,
+        });
+
         return this.renderResultados(res.status(400), {
           ...formulario,
           errors: result.errors,
@@ -152,8 +164,8 @@ class MonitoreosController {
         ...formulario,
         errors: [],
         success: result.estado_resultado === 'SIN_PLAGAS'
-          ? `Muestreo N° ${formulario.muestreo.numero_muestreo} marcado correctamente como sin plagas detectadas.`
-          : `Resultados guardados correctamente para el muestreo N° ${formulario.muestreo.numero_muestreo}.`,
+          ? `Monitoreo guardado sin plagas detectadas.${result.imagenes_insertadas ? ` Se adjuntaron ${result.imagenes_insertadas} imagenes de evidencia.` : ''}`
+          : `Resultados guardados correctamente.${result.imagenes_insertadas ? ` Se adjuntaron ${result.imagenes_insertadas} imagenes de evidencia.` : ''}`,
         values: this.monitoreosService.getValoresInicialesResultados(),
       });
     } catch (error) {

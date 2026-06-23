@@ -1,9 +1,42 @@
 const express = require('express');
+const multer = require('multer');
 const MonitoreosController = require('../controllers/monitoreos.controller');
 const { ensureAuthenticated } = require('../middlewares/auth.middleware');
 
 const router = express.Router();
 const monitoreosController = new MonitoreosController();
+const uploadImagenes = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 8 * 1024 * 1024,
+    files: 3,
+  },
+  fileFilter: (req, file, callback) => {
+    const permitidos = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
+    if (!permitidos.has(file.mimetype)) {
+      return callback(new Error('Solo se permiten imagenes JPG, PNG o WebP.'));
+    }
+
+    return callback(null, true);
+  },
+});
+
+const recibirImagenesResultados = (req, res, next) => {
+  const middleware = uploadImagenes.fields([
+    { name: 'imagen1', maxCount: 1 },
+    { name: 'imagen2', maxCount: 1 },
+    { name: 'imagen3', maxCount: 1 },
+  ]);
+
+  middleware(req, res, (error) => {
+    if (error) {
+      req.uploadImagenesError = error;
+    }
+
+    next();
+  });
+};
 
 router.get('/monitoreos/nuevo', ensureAuthenticated, monitoreosController.nuevo);
 router.post('/monitoreos', ensureAuthenticated, monitoreosController.crear);
@@ -15,6 +48,7 @@ router.get(
 router.post(
   '/monitoreos/:idMuestreo/resultados',
   ensureAuthenticated,
+  recibirImagenesResultados,
   monitoreosController.guardarResultados
 );
 router.post('/monitoreos/api/resumen-previo', ensureAuthenticated, monitoreosController.obtenerResumenPrevio);

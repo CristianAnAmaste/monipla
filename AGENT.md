@@ -115,6 +115,25 @@ Reglas confirmadas para CREATE de conteos:
 * No se permiten conteos duplicados para la misma combinacion id_estadio + id_estado_ejemplar dentro de una plaga.
 * No se permite guardar resultados si MONIPLA_MUESTREO.estado_resultado ya es SIN_PLAGAS o CON_PLAGAS.
 * Los logs backend de resultados usan prefijo [MONIPLA][RESULTADOS].
+* En la planilla unica de hallazgos, los errores deben referirse a Fila 1, Fila 2, etc.; no usar lenguaje de bloques o conteos.
+* La validacion principal de resultados debe ocurrir sobre filas planas antes de agrupar por plaga.
+* Las filas completamente vacias se ignoran, pero cualquier fila con algun dato ingresado debe validarse completa.
+* El total por plaga solo debe sumar filas completas y validas.
+
+## MONIPLA_IMAGEN
+
+Proposito:
+Guardar evidencia fotografica del monitoreo completo.
+
+Reglas confirmadas:
+
+* Las imagenes se asocian a id_muestreo, no a una plaga especifica.
+* Se pueden guardar tanto en SIN_PLAGAS como en CON_PLAGAS.
+* Maximo 3 imagenes por muestreo.
+* No se guardan imagenes en base64; se guardan como Buffer / VARBINARY.
+* Las imagenes se procesan y comprimen con sharp antes de abrir la transaccion final.
+* La transaccion de resultados tambien inserta MONIPLA_IMAGEN para proteger rollback completo.
+* No se permite agregar mas imagenes si el muestreo ya tiene imagenes registradas mientras no exista edicion.
 
 # Flujo Funcional
 
