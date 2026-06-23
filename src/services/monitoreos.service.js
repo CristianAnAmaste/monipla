@@ -6,6 +6,7 @@ const MAX_IMAGENES_MONITOREO = 3;
 const MAX_BYTES_IMAGEN_ORIGINAL = 8 * 1024 * 1024;
 const MAX_BYTES_IMAGEN_PROCESADA = 800 * 1024;
 const MAX_COMENTARIO_IMAGEN = 400;
+const HISTORIAL_PAGE_SIZE = 10;
 
 class MonitoreosService {
   constructor(monitoreosRepository = new MonitoreosRepository()) {
@@ -797,7 +798,7 @@ class MonitoreosService {
       tipoPlaga: String(query.tipoPlaga || '').trim(),
       estadoResultado: this.normalizarEstadoResultado(query.estadoResultado),
       pagina: this.normalizarPagina(query.pagina),
-      pageSize: 20,
+      pageSize: this.normalizarPageSize(query.pageSize),
     };
   }
 
@@ -836,6 +837,10 @@ class MonitoreosService {
   normalizarPagina(value) {
     const pagina = Number.parseInt(value, 10);
     return Number.isInteger(pagina) && pagina > 0 ? pagina : 1;
+  }
+
+  normalizarPageSize() {
+    return HISTORIAL_PAGE_SIZE;
   }
 
   prepararRegistroHistorial(registro) {

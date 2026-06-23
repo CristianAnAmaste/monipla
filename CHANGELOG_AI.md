@@ -322,3 +322,26 @@ El historial conserva las 7 columnas compactas y el detalle desplegable, pero ev
 Pendientes:
 Validar en navegador con nombres largos reales y distintos anchos de pantalla.
 
+## 2026-06-23
+
+Modulo:
+Historial de monitoreos - paginacion.
+
+Archivos modificados:
+
+* CHANGELOG_AI.md
+* src/controllers/monitoreos.controller.js
+* src/services/monitoreos.service.js
+
+Motivo:
+Reducir el largo del historial para que el detalle desplegable no genere tanto scroll al revisar monitoreos.
+
+Resumen tecnico:
+Se cambio el tamano de pagina del historial de 20 a 10 registros. El service fija pageSize en 10 para historial e ignora cualquier valor enviado por query, evitando que la URL aumente o reduzca el tamano de pagina. El repository mantiene OFFSET/FETCH parametrizado con @pageSize, por lo que la consulta recibe el nuevo limite normalizado. El controller ajusta el fallback de error a pageSize 10 y agrega pageSize y totalPaginas al log [MONIPLA][HISTORIAL].
+
+Impacto:
+GET /monitoreos/historial muestra como maximo 10 monitoreos por pagina y mantiene filtros, paginacion y detalle desplegable. No se modificaron CSS, estructura visual, SQL, base de datos, endpoints de imagenes, PDF, edicion ni eliminacion.
+
+Pendientes:
+Validar manualmente en navegador con mas de 10 monitoreos y filtros reales.
+

@@ -266,7 +266,9 @@ class MonitoreosController {
       console.info('[MONIPLA][HISTORIAL]', {
         filtros: resultado.values,
         pagina: resultado.paginacion.pagina,
+        pageSize: resultado.paginacion.pageSize,
         totalRegistros: resultado.paginacion.totalRegistros,
+        totalPaginas: resultado.paginacion.totalPaginas,
       });
 
       return this.renderHistorial(res.status(resultado.success ? 200 : 400), {
@@ -299,7 +301,7 @@ class MonitoreosController {
         paginacion: {
           totalRegistros: 0,
           pagina: 1,
-          pageSize: 20,
+          pageSize: 10,
           totalPaginas: 1,
         },
       });
