@@ -7,6 +7,16 @@ const monitoreosController = new MonitoreosController();
 
 router.get('/monitoreos/nuevo', ensureAuthenticated, monitoreosController.nuevo);
 router.post('/monitoreos', ensureAuthenticated, monitoreosController.crear);
+router.get(
+  '/monitoreos/:idMuestreo/resultados',
+  ensureAuthenticated,
+  monitoreosController.mostrarFormularioResultados
+);
+router.post(
+  '/monitoreos/:idMuestreo/resultados',
+  ensureAuthenticated,
+  monitoreosController.guardarResultados
+);
 router.post('/monitoreos/api/resumen-previo', ensureAuthenticated, monitoreosController.obtenerResumenPrevio);
 router.get('/monitoreos/api/campos/:genFundo', ensureAuthenticated, monitoreosController.listarCampos);
 router.get(

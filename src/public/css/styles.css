@@ -829,6 +829,108 @@ select:focus {
   margin-top: 0;
 }
 
+.result-summary {
+  margin-bottom: 20px;
+  padding: 22px;
+}
+
+.result-state-panel {
+  margin-bottom: 20px;
+}
+
+.results-stack {
+  display: grid;
+  gap: 20px;
+  grid-column: 1 / -1;
+}
+
+.result-mode-panel {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  grid-column: 1 / -1;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.result-card {
+  display: grid;
+  gap: 18px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.result-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.result-card-header h2 {
+  margin: 0;
+  font-size: 1.18rem;
+}
+
+.result-card-fields {
+  margin-top: 0;
+}
+
+.result-table-wrap {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.result-table {
+  min-width: 760px;
+}
+
+.result-flat-table {
+  min-width: 900px;
+}
+
+.result-table td {
+  vertical-align: top;
+}
+
+.result-table select,
+.result-table input {
+  min-height: 40px;
+}
+
+.result-actions {
+  margin-top: 0;
+}
+
+.result-totals {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.result-totals .message-list {
+  margin-top: 8px;
+}
+
+.total-chip {
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--primary-dark);
+  font-weight: 700;
+  background: var(--surface-muted);
+}
+
 @media (max-width: 900px) {
   .app-layout {
     grid-template-columns: 1fr;

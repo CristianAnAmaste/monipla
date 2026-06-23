@@ -1,0 +1,175 @@
+<%
+  const formatDate = (value) => {
+    if (!value) {
+      return '-';
+    }
+
+    const date = value instanceof Date ? value : new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return String(value).slice(0, 10);
+    }
+
+    return date.toISOString().slice(0, 10);
+  };
+
+  const jsonForHtml = (value) => JSON.stringify(value || {}).replace(/</g, '\\u003c');
+  const estaPendiente = muestreo.estado_resultado === 'PENDIENTE';
+  const mensajeEstado = muestreo.estado_resultado === 'SIN_PLAGAS'
+    ? 'Este muestreo fue registrado sin plagas detectadas.'
+    : 'Este muestreo ya tiene resultados de plagas registrados.';
+%>
+
+<section class="page-header">
+  <div>
+    <p class="eyebrow">Monitoreos</p>
+    <h1>Registrar Resultados</h1>
+    <p>Ingrese el resultado del monitoreo para el muestreo seleccionado.</p>
+  </div>
+
+  <a class="button button-secondary" href="/monitoreos/nuevo">Nuevo monitoreo</a>
+</section>
+
+<% if (success) { %>
+  <div class="alert alert-success" role="status"><%= success %></div>
+<% } %>
+
+<% if (errors && errors.length > 0) { %>
+  <div class="alert" role="alert">
+    <strong>Revise los resultados ingresados.</strong>
+    <ul class="message-list">
+      <% errors.forEach((message) => { %>
+        <li><%= message %></li>
+      <% }) %>
+    </ul>
+  </div>
+<% } %>
+
+<section class="info-panel">
+  <strong>Muestreo N° <%= muestreo.numero_muestreo %></strong>
+  <p>ID interno: <%= muestreo.id_muestreo %> · Fecha revision muestra: <%= formatDate(muestreo.fecha_revision_muestra) %> · Estado resultado: <%= muestreo.estado_resultado %></p>
+</section>
+
+<% if (!estaPendiente) { %>
+  <section class="info-panel result-state-panel">
+    <strong><%= mensajeEstado %></strong>
+    <% if (muestreo.observacion_resultado) { %>
+      <p>Observacion: <%= muestreo.observacion_resultado %></p>
+    <% } %>
+    <% if (muestreo.fecha_resultado) { %>
+      <p>Fecha resultado: <%= formatDate(muestreo.fecha_resultado) %></p>
+    <% } %>
+    <div class="form-actions result-actions">
+      <a class="button button-secondary button-fit" href="/home">Volver al inicio</a>
+      <a class="button button-primary button-fit" href="/monitoreos/nuevo">Registrar otro monitoreo</a>
+    </div>
+  </section>
+<% } %>
+
+<section class="data-panel result-summary">
+  <dl class="summary-list summary-list-inline">
+    <div>
+      <dt>Fundo</dt>
+      <dd><%= muestreo.nombre_fundo %></dd>
+    </div>
+    <div>
+      <dt>Campo</dt>
+      <dd><%= muestreo.nombre_campo %></dd>
+    </div>
+    <div>
+      <dt>Variedad</dt>
+      <dd><%= muestreo.nombre_variedad %></dd>
+    </div>
+    <div>
+      <dt>Cuartel</dt>
+      <dd>Cuartel <%= muestreo.codigo_cuartel %></dd>
+    </div>
+    <div>
+      <dt>Estructura</dt>
+      <dd><%= muestreo.nombre_estructura %></dd>
+    </div>
+    <div>
+      <dt>Trazabilidad</dt>
+      <dd><%= muestreo.trazabilidad || '-' %></dd>
+    </div>
+  </dl>
+</section>
+
+<% if (estaPendiente) { %>
+  <section class="form-panel">
+    <form id="monitoreo-resultados-form" class="form" action="/monitoreos/<%= muestreo.id_muestreo %>/resultados" method="POST" autocomplete="off" novalidate>
+      <input id="resultadosPayload" name="resultadosPayload" type="hidden">
+
+      <section class="result-mode-panel">
+        <label class="check-field">
+          <input
+            type="radio"
+            name="modoResultado"
+            value="SIN_PLAGAS"
+            <%= values.modoResultado === 'SIN_PLAGAS' ? 'checked' : '' %>
+          >
+          <span>Sin plagas detectadas</span>
+        </label>
+
+        <label class="check-field">
+          <input
+            type="radio"
+            name="modoResultado"
+            value="CON_PLAGAS"
+            <%= values.modoResultado !== 'SIN_PLAGAS' ? 'checked' : '' %>
+          >
+          <span>Registrar plagas detectadas</span>
+        </label>
+      </section>
+
+      <div id="sin-plagas-panel" class="form-group form-group-full" hidden>
+        <label for="observacionResultado">Observacion resultado</label>
+        <textarea
+          id="observacionResultado"
+          name="observacionResultado"
+          rows="3"
+          maxlength="500"
+          placeholder="Observacion opcional para el resultado sin plagas"
+        ><%= values.observacionResultado || '' %></textarea>
+      </div>
+
+      <section id="hallazgos-panel" class="form-group form-group-full">
+        <div class="result-card-header">
+          <div>
+            <p class="eyebrow">Hallazgos</p>
+            <h2>Planilla de plagas detectadas</h2>
+          </div>
+          <button id="agregar-fila" class="button button-secondary button-fit" type="button">Agregar fila</button>
+        </div>
+
+        <div class="table-wrap result-table-wrap">
+          <table class="data-table result-table result-flat-table">
+            <thead>
+              <tr>
+                <th>Plaga</th>
+                <th>Estadio</th>
+                <th>Estado</th>
+                <th>Cantidad</th>
+                <th>Accion</th>
+              </tr>
+            </thead>
+            <tbody id="resultados-filas-container"></tbody>
+          </table>
+        </div>
+
+        <div class="result-totals">
+          <strong>Total por plaga</strong>
+          <ul id="total-por-plaga" class="message-list"></ul>
+        </div>
+      </section>
+
+      <div class="form-actions">
+        <button id="guardar-resultados" class="button button-primary button-fit" type="submit">Guardar resultados</button>
+      </div>
+    </form>
+  </section>
+
+  <script id="resultados-opciones-json" type="application/json"><%- jsonForHtml(opciones) %></script>
+  <script id="resultados-values-json" type="application/json"><%- jsonForHtml(values) %></script>
+  <script src="/js/monitoreos-resultados.js"></script>
+<% } %>

@@ -6,6 +6,8 @@ class MonitoreosController {
 
     this.nuevo = this.nuevo.bind(this);
     this.crear = this.crear.bind(this);
+    this.mostrarFormularioResultados = this.mostrarFormularioResultados.bind(this);
+    this.guardarResultados = this.guardarResultados.bind(this);
     this.obtenerResumenPrevio = this.obtenerResumenPrevio.bind(this);
     this.listarCampos = this.listarCampos.bind(this);
     this.listarVariedades = this.listarVariedades.bind(this);
@@ -37,10 +39,14 @@ class MonitoreosController {
 
   async crear(req, res) {
     try {
-      const result = await this.monitoreosService.validarPasoUno(req.body);
-      const formulario = await this.monitoreosService.getFormularioData(result.values);
+      const result = await this.monitoreosService.guardarCabeceraMonitoreo(
+        req.body,
+        req.session.usuario
+      );
 
       if (!result.success) {
+        const formulario = await this.monitoreosService.getFormularioData(result.values);
+
         return this.renderNuevo(res.status(400), {
           ...formulario,
           errors: result.errors,
@@ -48,13 +54,9 @@ class MonitoreosController {
         });
       }
 
-      return this.renderNuevo(res, {
-        ...formulario,
-        errors: [],
-        success: result.message,
-      });
+      return res.redirect(`/monitoreos/${result.id_muestreo}/resultados?cabecera=1`);
     } catch (error) {
-      console.error('Error al validar formulario de monitoreo', error);
+      console.error('Error al guardar cabecera de monitoreo', error);
 
       let formulario;
 
@@ -74,8 +76,107 @@ class MonitoreosController {
 
       return this.renderNuevo(res.status(500), {
         ...formulario,
-        errors: ['No fue posible procesar el formulario de monitoreo.'],
+        errors: ['No fue posible guardar el monitoreo. Revise los datos e intente nuevamente.'],
         success: null,
+      });
+    }
+  }
+
+  async mostrarFormularioResultados(req, res) {
+    try {
+      console.info('[MONIPLA][RESULTADOS][GET]', {
+        idMuestreo: req.params.idMuestreo,
+      });
+
+      const formulario = await this.monitoreosService.obtenerFormularioResultados(req.params.idMuestreo);
+      const formularioVisible = formulario.muestreo.estado_resultado === 'PENDIENTE';
+
+      console.info('[MONIPLA][RESULTADOS][GET]', {
+        idMuestreo: formulario.muestreo.id_muestreo,
+        estadoResultado: formulario.muestreo.estado_resultado,
+        vista: formularioVisible ? 'FORMULARIO' : 'COMPLETADO',
+      });
+
+      return this.renderResultados(res, {
+        ...formulario,
+        errors: [],
+        success: req.query.cabecera === '1'
+          ? `Monitoreo guardado correctamente. Numero de muestreo: ${formulario.muestreo.numero_muestreo}.`
+          : null,
+        values: this.monitoreosService.getValoresInicialesResultados(),
+      });
+    } catch (error) {
+      console.error('Error al cargar formulario de resultados', error);
+
+      return res.status(404).render('layouts/main', {
+        title: 'Registrar Resultados',
+        contentView: '../monitoreos/placeholder',
+        pageTitle: 'Muestreo no disponible',
+        pageMessage: 'No fue posible cargar el muestreo solicitado para registrar resultados.',
+      });
+    }
+  }
+
+  async guardarResultados(req, res) {
+    try {
+      const payload = this.monitoreosService.normalizarResultadosEntrada(req.body);
+      const filasRecibidas = Array.isArray(payload.resultados)
+        ? payload.resultados.length
+        : payload.plagas.reduce((total, plaga) => total + plaga.conteos.length, 0);
+
+      console.info('[MONIPLA][RESULTADOS][POST]', {
+        idMuestreo: req.params.idMuestreo,
+        modo: payload.modoResultado,
+        idUsuario: req.session.usuario && req.session.usuario.id,
+        filasRecibidas,
+      });
+
+      const result = await this.monitoreosService.guardarResultadosMuestreo(
+        req.params.idMuestreo,
+        req.body,
+        req.session.usuario
+      );
+
+      const formulario = await this.monitoreosService.obtenerFormularioResultados(req.params.idMuestreo);
+
+      if (!result.success) {
+        return this.renderResultados(res.status(400), {
+          ...formulario,
+          errors: result.errors,
+          success: null,
+          values: result.values,
+        });
+      }
+
+      return this.renderResultados(res, {
+        ...formulario,
+        errors: [],
+        success: result.estado_resultado === 'SIN_PLAGAS'
+          ? `Muestreo N° ${formulario.muestreo.numero_muestreo} marcado correctamente como sin plagas detectadas.`
+          : `Resultados guardados correctamente para el muestreo N° ${formulario.muestreo.numero_muestreo}.`,
+        values: this.monitoreosService.getValoresInicialesResultados(),
+      });
+    } catch (error) {
+      console.error('Error al guardar resultados de monitoreo', error);
+
+      let formulario;
+
+      try {
+        formulario = await this.monitoreosService.obtenerFormularioResultados(req.params.idMuestreo);
+      } catch (formError) {
+        return res.status(404).render('layouts/main', {
+          title: 'Registrar Resultados',
+          contentView: '../monitoreos/placeholder',
+          pageTitle: 'Muestreo no disponible',
+          pageMessage: 'No fue posible cargar el muestreo solicitado para registrar resultados.',
+        });
+      }
+
+      return this.renderResultados(res.status(500), {
+        ...formulario,
+        errors: ['No fue posible guardar los resultados. Revise los datos e intente nuevamente.'],
+        success: null,
+        values: this.monitoreosService.normalizarResultadosEntrada(req.body),
       });
     }
   }
@@ -168,6 +269,18 @@ class MonitoreosController {
       errors: data.errors || [],
       success: data.success || null,
       values: data.values,
+      opciones: data.opciones,
+    });
+  }
+
+  renderResultados(res, data) {
+    return res.render('layouts/main', {
+      title: 'Registrar Resultados',
+      contentView: '../monitoreos/resultados',
+      errors: data.errors || [],
+      success: data.success || null,
+      muestreo: data.muestreo,
+      values: data.values || this.monitoreosService.getValoresInicialesResultados(),
       opciones: data.opciones,
     });
   }
