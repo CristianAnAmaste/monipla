@@ -700,6 +700,401 @@ class MonitoreosRepository {
     return insertadas;
   }
 
+  async obtenerFiltrosHistorial() {
+    const pool = await poolPromise;
+
+    const [
+      fundos,
+      campos,
+      variedades,
+      cuarteles,
+      estructuras,
+      plagas,
+      tiposPlaga,
+    ] = await Promise.all([
+      pool.request().query(`
+        SELECT
+          q.value,
+          q.label
+        FROM (
+          SELECT DISTINCT
+            f.Gen_Fundo AS value,
+            LTRIM(RTRIM(f.Nombre)) AS label
+          FROM dbo.MONIPLA_MUESTREO m
+          INNER JOIN dbo.MONIPLA_ORIGEN_MUESTRA om
+            ON om.id_origen_muestra = m.id_origen_muestra
+          INNER JOIN dbo.GEN_CUARTEL gc
+            ON gc.GEN_CUARTEL = om.gen_cuartel
+          INNER JOIN dbo.GEN_FUNDO f
+            ON f.Gen_Fundo = gc.GEN_FUNDO
+        ) q
+        ORDER BY q.label ASC
+      `),
+      pool.request().query(`
+        SELECT
+          q.value,
+          q.label
+        FROM (
+          SELECT DISTINCT
+            c.Gen_Campo AS value,
+            LTRIM(RTRIM(c.Nombre)) AS label
+          FROM dbo.MONIPLA_MUESTREO m
+          INNER JOIN dbo.MONIPLA_ORIGEN_MUESTRA om
+            ON om.id_origen_muestra = m.id_origen_muestra
+          INNER JOIN dbo.GEN_CUARTEL gc
+            ON gc.GEN_CUARTEL = om.gen_cuartel
+          INNER JOIN dbo.GEN_CAMPO c
+            ON c.Gen_Campo = gc.GEN_CAMPO
+        ) q
+        ORDER BY q.label ASC
+      `),
+      pool.request().query(`
+        SELECT
+          q.value,
+          q.label
+        FROM (
+          SELECT DISTINCT
+            v.gen_variedad AS value,
+            LTRIM(RTRIM(v.Nombre)) AS label
+          FROM dbo.MONIPLA_MUESTREO m
+          INNER JOIN dbo.MONIPLA_ORIGEN_MUESTRA om
+            ON om.id_origen_muestra = m.id_origen_muestra
+          INNER JOIN dbo.GEN_CUARTEL gc
+            ON gc.GEN_CUARTEL = om.gen_cuartel
+          INNER JOIN dbo.GEN_VARIEDAD v
+            ON v.gen_variedad = gc.GEN_VARIEDAD
+        ) q
+        ORDER BY q.label ASC
+      `),
+      pool.request().query(`
+        SELECT
+          q.value,
+          q.codigo,
+          q.label
+        FROM (
+          SELECT DISTINCT
+            gc.GEN_CUARTEL AS value,
+            LTRIM(RTRIM(gc.CODIGO)) AS codigo,
+            CONCAT('Cuartel ', LTRIM(RTRIM(gc.CODIGO))) AS label,
+            TRY_CONVERT(INT, gc.CODIGO) AS orden_numerico
+          FROM dbo.MONIPLA_MUESTREO m
+          INNER JOIN dbo.MONIPLA_ORIGEN_MUESTRA om
+            ON om.id_origen_muestra = m.id_origen_muestra
+          INNER JOIN dbo.GEN_CUARTEL gc
+            ON gc.GEN_CUARTEL = om.gen_cuartel
+        ) q
+        ORDER BY q.orden_numerico, q.codigo
+      `),
+      pool.request().query(`
+        SELECT
+          id_estructura AS value,
+          LTRIM(RTRIM(nombre_estructura)) AS label
+        FROM dbo.MONIPLA_ESTRUCTURA
+        WHERE activo = 1
+        ORDER BY nombre_estructura ASC
+      `),
+      pool.request().query(`
+        SELECT
+          id_plaga AS value,
+          LTRIM(RTRIM(nombre_plaga)) AS label,
+          LTRIM(RTRIM(ISNULL(nombre_cientifico, ''))) AS nombre_cientifico,
+          LTRIM(RTRIM(ISNULL(tipo_registro, ''))) AS tipo_registro
+        FROM dbo.MONIPLA_PLAGA
+        WHERE activo = 1
+        ORDER BY nombre_plaga ASC
+      `),
+      pool.request().query(`
+        SELECT DISTINCT
+          LTRIM(RTRIM(tipo_registro)) AS value,
+          LTRIM(RTRIM(tipo_registro)) AS label
+        FROM dbo.MONIPLA_PLAGA
+        WHERE activo = 1
+          AND tipo_registro IS NOT NULL
+          AND LTRIM(RTRIM(tipo_registro)) <> ''
+        ORDER BY label ASC
+      `),
+    ]);
+
+    return {
+      fundos: fundos.recordset,
+      campos: campos.recordset,
+      variedades: variedades.recordset,
+      cuarteles: cuarteles.recordset,
+      estructuras: estructuras.recordset,
+      plagas: plagas.recordset,
+      tiposPlaga: tiposPlaga.recordset,
+      estadosResultado: [
+        { value: 'PENDIENTE', label: 'Pendiente' },
+        { value: 'SIN_PLAGAS', label: 'Sin plagas' },
+        { value: 'CON_PLAGAS', label: 'Con plagas' },
+      ],
+    };
+  }
+
+  async listarHistorialMonitoreos(filtros) {
+    const pool = await poolPromise;
+
+    const buildRequest = () => pool.request()
+      .input('idFundo', sql.Int, filtros.idFundo || null)
+      .input('idCampo', sql.Int, filtros.idCampo || null)
+      .input('idVariedad', sql.Int, filtros.idVariedad || null)
+      .input('idCuartel', sql.Int, filtros.idCuartel || null)
+      .input('fechaDesde', sql.Date, filtros.fechaDesde || null)
+      .input('fechaHasta', sql.Date, filtros.fechaHasta || null)
+      .input('idEstructura', sql.Int, filtros.idEstructura || null)
+      .input('idPlaga', sql.Int, filtros.idPlaga || null)
+      .input('tipoPlaga', sql.VarChar(20), filtros.tipoPlaga || null)
+      .input('estadoResultado', sql.VarChar(20), filtros.estadoResultado || null);
+
+    const fromWhere = `
+      FROM dbo.MONIPLA_MUESTREO m
+      INNER JOIN dbo.MONIPLA_ORIGEN_MUESTRA om
+        ON om.id_origen_muestra = m.id_origen_muestra
+      INNER JOIN dbo.GEN_CUARTEL gc
+        ON gc.GEN_CUARTEL = om.gen_cuartel
+      INNER JOIN dbo.GEN_FUNDO f
+        ON f.Gen_Fundo = gc.GEN_FUNDO
+      INNER JOIN dbo.GEN_CAMPO c
+        ON c.Gen_Campo = gc.GEN_CAMPO
+      INNER JOIN dbo.GEN_VARIEDAD v
+        ON v.gen_variedad = gc.GEN_VARIEDAD
+      INNER JOIN dbo.MONIPLA_ESTRUCTURA e
+        ON e.id_estructura = m.id_estructura
+      OUTER APPLY (
+        SELECT
+          COUNT(DISTINCT rp.id_plaga) AS plagas_detectadas,
+          SUM(ISNULL(rc.cantidad, 0)) AS total_ejemplares
+        FROM dbo.MONIPLA_RESULTADO_PLAGA rp
+        LEFT JOIN dbo.MONIPLA_RESULTADO_CONTEO rc
+          ON rc.id_resultado_plaga = rp.id_resultado_plaga
+        WHERE rp.id_muestreo = m.id_muestreo
+      ) resultados
+      OUTER APPLY (
+        SELECT COUNT(1) AS total_imagenes
+        FROM dbo.MONIPLA_IMAGEN img
+        WHERE img.id_muestreo = m.id_muestreo
+      ) imagenes
+      WHERE (@idFundo IS NULL OR gc.GEN_FUNDO = @idFundo)
+        AND (@idCampo IS NULL OR gc.GEN_CAMPO = @idCampo)
+        AND (@idVariedad IS NULL OR gc.GEN_VARIEDAD = @idVariedad)
+        AND (@idCuartel IS NULL OR gc.GEN_CUARTEL = @idCuartel)
+        AND (@fechaDesde IS NULL OR m.fecha_muestreo >= @fechaDesde)
+        AND (@fechaHasta IS NULL OR m.fecha_muestreo <= @fechaHasta)
+        AND (@idEstructura IS NULL OR m.id_estructura = @idEstructura)
+        AND (@estadoResultado IS NULL OR m.estado_resultado = @estadoResultado)
+        AND (
+          @idPlaga IS NULL
+          OR EXISTS (
+            SELECT 1
+            FROM dbo.MONIPLA_RESULTADO_PLAGA rpFiltro
+            WHERE rpFiltro.id_muestreo = m.id_muestreo
+              AND rpFiltro.id_plaga = @idPlaga
+          )
+        )
+        AND (
+          @tipoPlaga IS NULL
+          OR EXISTS (
+            SELECT 1
+            FROM dbo.MONIPLA_RESULTADO_PLAGA rpTipo
+            INNER JOIN dbo.MONIPLA_PLAGA pTipo
+              ON pTipo.id_plaga = rpTipo.id_plaga
+            WHERE rpTipo.id_muestreo = m.id_muestreo
+              AND pTipo.tipo_registro = @tipoPlaga
+          )
+        )
+    `;
+
+    const countResult = await buildRequest().query(`
+      SELECT COUNT(1) AS total_registros
+      ${fromWhere}
+    `);
+
+    const totalRegistros = Number(countResult.recordset[0].total_registros || 0);
+    const totalPaginas = Math.max(1, Math.ceil(totalRegistros / filtros.pageSize));
+    const pagina = Math.min(filtros.pagina, totalPaginas);
+    const offset = (pagina - 1) * filtros.pageSize;
+
+    const registrosResult = await buildRequest()
+      .input('offset', sql.Int, offset)
+      .input('pageSize', sql.Int, filtros.pageSize)
+      .query(`
+        SELECT
+          m.id_muestreo,
+          m.numero_muestreo,
+          m.fecha_muestreo,
+          m.estado_resultado,
+          gc.GEN_CUARTEL AS gen_cuartel,
+          LTRIM(RTRIM(gc.CODIGO)) AS codigo_cuartel,
+          LTRIM(RTRIM(f.Nombre)) AS nombre_fundo,
+          LTRIM(RTRIM(c.Nombre)) AS nombre_campo,
+          LTRIM(RTRIM(v.Nombre)) AS nombre_variedad,
+          LTRIM(RTRIM(e.nombre_estructura)) AS nombre_estructura,
+          ISNULL(resultados.plagas_detectadas, 0) AS plagas_detectadas,
+          ISNULL(resultados.total_ejemplares, 0) AS total_ejemplares,
+          ISNULL(imagenes.total_imagenes, 0) AS total_imagenes
+        ${fromWhere}
+        ORDER BY
+          m.fecha_muestreo DESC,
+          m.numero_muestreo DESC,
+          m.id_muestreo DESC
+        OFFSET @offset ROWS
+        FETCH NEXT @pageSize ROWS ONLY
+      `);
+
+    return {
+      registros: registrosResult.recordset,
+      totalRegistros,
+      pagina,
+      pageSize: filtros.pageSize,
+      totalPaginas,
+    };
+  }
+
+  async obtenerDetalleMuestreo(idMuestreo) {
+    const pool = await poolPromise;
+
+    const result = await pool
+      .request()
+      .input('idMuestreo', sql.Int, idMuestreo)
+      .query(`
+        SELECT TOP 1
+          m.id_muestreo,
+          m.numero_muestreo,
+          m.fecha_muestreo,
+          m.fecha_revision_muestra,
+          m.fecha_solicitud_muestra,
+          m.fecha_recepcion_muestra,
+          m.observacion_general,
+          m.estado_resultado,
+          m.observacion_resultado,
+          m.fecha_resultado,
+          m.fecha_creacion,
+          m.fecha_modificacion,
+          m.id_usuario_creacion,
+          m.id_usuario_resultado,
+          uc.nombre AS nombre_usuario_creacion,
+          ur.nombre AS nombre_usuario_resultado,
+          e.id_estructura,
+          LTRIM(RTRIM(e.nombre_estructura)) AS nombre_estructura,
+          om.id_origen_muestra,
+          gc.GEN_CUARTEL AS gen_cuartel,
+          LTRIM(RTRIM(gc.CODIGO)) AS codigo_cuartel,
+          LTRIM(RTRIM(f.Nombre)) AS nombre_fundo,
+          LTRIM(RTRIM(c.Nombre)) AS nombre_campo,
+          LTRIM(RTRIM(v.Nombre)) AS nombre_variedad,
+          rel.sdp,
+          rel.csg,
+          rel.trazabilidad
+        FROM dbo.MONIPLA_MUESTREO m
+        INNER JOIN dbo.MONIPLA_ORIGEN_MUESTRA om
+          ON om.id_origen_muestra = m.id_origen_muestra
+        INNER JOIN dbo.GEN_CUARTEL gc
+          ON gc.GEN_CUARTEL = om.gen_cuartel
+        INNER JOIN dbo.GEN_FUNDO f
+          ON f.Gen_Fundo = gc.GEN_FUNDO
+        INNER JOIN dbo.GEN_CAMPO c
+          ON c.Gen_Campo = gc.GEN_CAMPO
+        INNER JOIN dbo.GEN_VARIEDAD v
+          ON v.gen_variedad = gc.GEN_VARIEDAD
+        INNER JOIN dbo.MONIPLA_ESTRUCTURA e
+          ON e.id_estructura = m.id_estructura
+        LEFT JOIN dbo.MONIPLA_REL_CUARTEL_SDP rel
+          ON rel.id_rel_cuartel_sdp = om.id_rel_cuartel_sdp
+        LEFT JOIN dbo.usuarios_sistema uc
+          ON uc.id = m.id_usuario_creacion
+        LEFT JOIN dbo.usuarios_sistema ur
+          ON ur.id = m.id_usuario_resultado
+        WHERE m.id_muestreo = @idMuestreo
+      `);
+
+    return result.recordset[0] || null;
+  }
+
+  async obtenerResultadosAgrupadosMuestreo(idMuestreo) {
+    const pool = await poolPromise;
+
+    const result = await pool
+      .request()
+      .input('idMuestreo', sql.Int, idMuestreo)
+      .query(`
+        SELECT
+          rp.id_resultado_plaga,
+          rp.id_muestreo,
+          rp.id_plaga,
+          rp.detalle_texto,
+          rp.cantidad_total,
+          rp.observacion,
+          rp.fecha_creacion AS fecha_resultado_plaga,
+          LTRIM(RTRIM(p.nombre_plaga)) AS nombre_plaga,
+          LTRIM(RTRIM(ISNULL(p.nombre_cientifico, ''))) AS nombre_cientifico,
+          LTRIM(RTRIM(ISNULL(p.tipo_registro, ''))) AS tipo_registro,
+          p.es_cuarentenaria,
+          rc.id_resultado_conteo,
+          rc.id_estadio,
+          LTRIM(RTRIM(est.nombre_estadio)) AS nombre_estadio,
+          rc.id_estado_ejemplar,
+          LTRIM(RTRIM(ee.nombre_estado)) AS nombre_estado,
+          rc.cantidad
+        FROM dbo.MONIPLA_RESULTADO_PLAGA rp
+        INNER JOIN dbo.MONIPLA_PLAGA p
+          ON p.id_plaga = rp.id_plaga
+        LEFT JOIN dbo.MONIPLA_RESULTADO_CONTEO rc
+          ON rc.id_resultado_plaga = rp.id_resultado_plaga
+        LEFT JOIN dbo.MONIPLA_ESTADIO est
+          ON est.id_estadio = rc.id_estadio
+        LEFT JOIN dbo.MONIPLA_ESTADO_EJEMPLAR ee
+          ON ee.id_estado_ejemplar = rc.id_estado_ejemplar
+        WHERE rp.id_muestreo = @idMuestreo
+        ORDER BY
+          p.nombre_plaga ASC,
+          rp.id_resultado_plaga ASC,
+          est.id_estadio ASC,
+          ee.id_estado_ejemplar ASC
+      `);
+
+    return result.recordset;
+  }
+
+  async obtenerImagenesMuestreo(idMuestreo) {
+    const pool = await poolPromise;
+
+    const result = await pool
+      .request()
+      .input('idMuestreo', sql.Int, idMuestreo)
+      .query(`
+        SELECT
+          id_imagen,
+          id_muestreo,
+          orden,
+          mime,
+          comentario,
+          fecha_creacion
+        FROM dbo.MONIPLA_IMAGEN
+        WHERE id_muestreo = @idMuestreo
+        ORDER BY orden ASC, id_imagen ASC
+      `);
+
+    return result.recordset;
+  }
+
+  async obtenerImagenPorId(idImagen) {
+    const pool = await poolPromise;
+
+    const result = await pool
+      .request()
+      .input('idImagen', sql.Int, idImagen)
+      .query(`
+        SELECT TOP 1
+          id_imagen,
+          imagen,
+          mime
+        FROM dbo.MONIPLA_IMAGEN
+        WHERE id_imagen = @idImagen
+      `);
+
+    return result.recordset[0] || null;
+  }
+
   async guardarResultadosMuestreoTransaccional(idMuestreo, plagas, metadata) {
     const pool = await poolPromise;
     const transaction = new sql.Transaction(pool);

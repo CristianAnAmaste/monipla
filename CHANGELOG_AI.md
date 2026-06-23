@@ -209,3 +209,116 @@ SIN_PLAGAS y CON_PLAGAS pueden guardar evidencia opcional asociada al id_muestre
 Pendientes:
 Probar manualmente con imagenes reales de terreno y definir endpoint/vista de lectura para historial o detalle.
 
+## 2026-06-23
+
+Modulo:
+Historial de monitoreos.
+
+Archivos modificados:
+
+* AGENT.md
+* CHANGELOG_AI.md
+* src/controllers/monitoreos.controller.js
+* src/public/css/styles.css
+* src/repositories/monitoreos.repository.js
+* src/routes/monitoreos.routes.js
+* src/services/monitoreos.service.js
+
+Archivos nuevos:
+
+* src/views/monitoreos/historial.ejs
+
+Motivo:
+Implementar la vista GET /monitoreos/historial con filtros y paginacion para consultar monitoreos registrados.
+
+Resumen tecnico:
+Se reemplazo el placeholder de historial por una vista EJS con filtros por fundo, campo, variedad, cuartel, fecha de monitoreo, estructura, plaga, tipo de plaga y estado_resultado. El repository agrega consultas parametrizadas con paginacion de 20 registros, filtros EXISTS para plaga/tipo de plaga, OUTER APPLY para totales y conteo de evidencias. No se consulta MONIPLA_IMAGEN.imagen. El service normaliza filtros, valida fechas, formatea estados para badges y prepara valores de tabla.
+
+Impacto:
+El usuario puede consultar monitoreos registrados sin cargar imagenes binarias ni duplicar filas por resultados de plagas. Queda preparada una ruta placeholder de detalle para la siguiente fase. No se implementaron PDF, Excel, edicion, eliminacion ni visualizacion de imagenes.
+
+Pendientes:
+Implementar detalle de monitoreo con resultados e imagenes en una fase posterior y probar filtros con volumen real.
+
+## 2026-06-23
+
+Modulo:
+Historial de monitoreos - detalle desplegable.
+
+Archivos modificados:
+
+* AGENT.md
+* CHANGELOG_AI.md
+* src/controllers/monitoreos.controller.js
+* src/public/css/styles.css
+* src/repositories/monitoreos.repository.js
+* src/routes/monitoreos.routes.js
+* src/services/monitoreos.service.js
+* src/views/monitoreos/historial.ejs
+
+Archivos nuevos:
+
+* src/public/js/monitoreos-historial.js
+* src/views/monitoreos/partials/detalle-muestreo.ejs
+
+Motivo:
+Permitir consultar el detalle de un monitoreo desde el historial sin abandonar filtros ni paginacion, y mostrar evidencias mediante endpoint seguro.
+
+Resumen tecnico:
+Se agrego GET /monitoreos/:idMuestreo/detalle-parcial para renderizar un parcial EJS con cabecera, estado, resultados agrupados por plaga, conteos y metadata de evidencias. Se agrego GET /monitoreos/imagenes/:idImagen para devolver la imagen como buffer con Content-Type real, X-Content-Type-Options nosniff y Cache-Control privado. El historial ahora usa JS para abrir un unico detalle bajo demanda debajo de la fila seleccionada. Las consultas de historial y detalle no cargan MONIPLA_IMAGEN.imagen; el binario solo se consulta en el endpoint especifico de imagen.
+
+Impacto:
+El usuario puede revisar monitoreos PENDIENTE, SIN_PLAGAS y CON_PLAGAS desde el historial con una experiencia compacta y sin cargar imagenes pesadas en el listado. No se implemento PDF, Excel, edicion, eliminacion ni descarga masiva.
+
+Pendientes:
+Probar visualmente con datos productivos, revisar permisos finos por perfil si aplica y usar este detalle como base para una futura etapa PDF.
+
+## 2026-06-23
+
+Modulo:
+Historial de monitoreos - compactacion UX/UI.
+
+Archivos modificados:
+
+* CHANGELOG_AI.md
+* src/public/css/styles.css
+* src/public/js/monitoreos-historial.js
+* src/views/monitoreos/historial.ejs
+* src/views/monitoreos/partials/detalle-muestreo.ejs
+
+Motivo:
+Reducir desborde horizontal y mejorar la lectura rapida del historial y del detalle desplegable.
+
+Resumen tecnico:
+Se compacto la tabla principal del historial de 12 columnas a 7 columnas agrupadas: Nro/Fecha, Origen, Estructura, Estado, Resultado, Evidencias y Accion. El detalle parcial se rediseño como panel compacto con contexto agricola en lineas, resultado por estado, plagas en tarjetas livianas con tabla de conteos angosta y evidencias como miniaturas fijas. El JS del historial conserva un unico detalle abierto y evita volver a pedir el HTML parcial si ya fue cargado. No se modificaron consultas SQL, endpoints ni reglas de negocio.
+
+Impacto:
+El historial queda mas legible, reduce scroll horizontal innecesario y el detalle prioriza resultados e imagenes en vez de repetir toda la ficha administrativa. No se implemento PDF, Excel, edicion, eliminacion, dashboard ni cambios de base de datos.
+
+Pendientes:
+Validar visualmente en navegador con nombres largos reales y usar el detalle compacto como base para una futura salida PDF.
+
+## 2026-06-23
+
+Modulo:
+Historial de monitoreos - correccion de corte de texto.
+
+Archivos modificados:
+
+* CHANGELOG_AI.md
+* src/public/css/styles.css
+* src/views/monitoreos/historial.ejs
+* src/views/monitoreos/partials/detalle-muestreo.ejs
+
+Motivo:
+Corregir la columna Origen del historial, que se estaba cortando letra por letra por reglas CSS demasiado agresivas.
+
+Resumen tecnico:
+Se cambio la tabla del historial a table-layout auto con min-width razonable y scroll horizontal solo dentro del contenedor de tabla. Se agrego el wrapper especifico historial-table-wrapper y se elimino la transformacion movil del historial a celdas tipo bloque para evitar columnas estrechas. Se reemplazo overflow-wrap anywhere por break-word/word-break normal en las celdas de historial y detalle. La columna Origen queda con min-width y max-width controlados para mostrar Fundo/Campo y Variedad/Cuartel en lineas normales. Se mantuvo la estructura compacta del detalle y se cambiaron separadores visuales no ASCII por guiones para evitar mojibake.
+
+Impacto:
+El historial conserva las 7 columnas compactas y el detalle desplegable, pero evita filas excesivamente altas por texto cortado letra a letra. No se modificaron backend, SQL, repositories, services, controllers, rutas, base de datos, PDF ni reglas de negocio.
+
+Pendientes:
+Validar en navegador con nombres largos reales y distintos anchos de pantalla.
+

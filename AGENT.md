@@ -135,6 +135,32 @@ Reglas confirmadas:
 * La transaccion de resultados tambien inserta MONIPLA_IMAGEN para proteger rollback completo.
 * No se permite agregar mas imagenes si el muestreo ya tiene imagenes registradas mientras no exista edicion.
 
+## Historial De Monitoreos
+
+Reglas confirmadas:
+
+* La fecha principal del historial es MONIPLA_MUESTREO.fecha_muestreo.
+* En esta etapa, fecha_muestreo usa el mismo valor que fecha_revision_muestra.
+* El historial no debe consultar MONIPLA_IMAGEN.imagen.
+* La columna Evidencias solo muestra COUNT de MONIPLA_IMAGEN por id_muestreo.
+* Los filtros de plaga y tipo de plaga deben usar EXISTS para no duplicar filas.
+* El tipo de plaga usa MONIPLA_PLAGA.tipo_registro.
+* La paginacion funcional del historial es de 20 registros por pagina.
+
+## Detalle De Monitoreo
+
+Reglas confirmadas:
+
+* El detalle se carga bajo demanda desde el historial mediante GET /monitoreos/:idMuestreo/detalle-parcial.
+* El historial no debe traer imagen binaria; solo puede mostrar cantidad de evidencias.
+* La consulta de detalle tampoco debe traer MONIPLA_IMAGEN.imagen; solo metadata de evidencias.
+* Las miniaturas se renderizan con GET /monitoreos/imagenes/:idImagen.
+* El endpoint de imagen debe exigir sesion, validar id numerico, devolver buffer binario y no base64.
+* El endpoint de imagen debe enviar Content-Type real, X-Content-Type-Options: nosniff y Cache-Control privado.
+* Los resultados CON_PLAGAS se consultan como filas planas en repository y se agrupan por plaga en service.
+* Los logs del detalle usan prefijo [MONIPLA][DETALLE].
+* Los logs de visualizacion de imagenes usan prefijo [MONIPLA][IMAGENES].
+
 # Flujo Funcional
 
 ## Registrar Monitoreo

@@ -13,6 +13,9 @@ class MonitoreosController {
     this.listarVariedades = this.listarVariedades.bind(this);
     this.listarCuarteles = this.listarCuarteles.bind(this);
     this.historial = this.historial.bind(this);
+    this.detalleParcial = this.detalleParcial.bind(this);
+    this.verImagen = this.verImagen.bind(this);
+    this.detalle = this.detalle.bind(this);
     this.editar = this.editar.bind(this);
   }
 
@@ -256,12 +259,127 @@ class MonitoreosController {
     }
   }
 
-  historial(req, res) {
+  async historial(req, res) {
+    try {
+      const resultado = await this.monitoreosService.obtenerHistorialMonitoreos(req.query);
+
+      console.info('[MONIPLA][HISTORIAL]', {
+        filtros: resultado.values,
+        pagina: resultado.paginacion.pagina,
+        totalRegistros: resultado.paginacion.totalRegistros,
+      });
+
+      return this.renderHistorial(res.status(resultado.success ? 200 : 400), {
+        errors: resultado.errors,
+        values: resultado.values,
+        opciones: resultado.opciones,
+        registros: resultado.registros,
+        paginacion: resultado.paginacion,
+      });
+    } catch (error) {
+      console.error('[MONIPLA][HISTORIAL][ERROR]', {
+        filtros: req.query,
+        error: error.message,
+      });
+
+      return this.renderHistorial(res.status(500), {
+        errors: ['No fue posible cargar el historial de monitoreos.'],
+        values: this.monitoreosService.normalizarFiltrosHistorial(req.query),
+        opciones: {
+          fundos: [],
+          campos: [],
+          variedades: [],
+          cuarteles: [],
+          estructuras: [],
+          plagas: [],
+          tiposPlaga: [],
+          estadosResultado: [],
+        },
+        registros: [],
+        paginacion: {
+          totalRegistros: 0,
+          pagina: 1,
+          pageSize: 20,
+          totalPaginas: 1,
+        },
+      });
+    }
+  }
+
+  async detalleParcial(req, res) {
+    const { idMuestreo } = req.params;
+
+    try {
+      console.info('[MONIPLA][DETALLE][GET]', {
+        idMuestreo,
+      });
+
+      const detalle = await this.monitoreosService.obtenerDetalleParcialMuestreo(idMuestreo);
+
+      console.info('[MONIPLA][DETALLE][OK]', {
+        idMuestreo: detalle.idMuestreo,
+        estadoResultado: detalle.estadoResultado,
+        totalPlagas: detalle.resumen.totalPlagas,
+        totalConteos: detalle.resumen.totalConteos,
+        totalImagenes: detalle.resumen.totalImagenes,
+      });
+
+      return res.render('monitoreos/partials/detalle-muestreo', {
+        detalle,
+      });
+    } catch (error) {
+      console.error('[MONIPLA][DETALLE][ERROR]', {
+        idMuestreo,
+        error: error.message,
+      });
+
+      const status = ['ID_MUESTREO_INVALIDO', 'MUESTREO_NO_EXISTE'].includes(error.message) ? 404 : 500;
+
+      return res.status(status).send(`
+        <div class="detalle-error" role="alert">
+          No se pudo cargar el detalle del monitoreo.
+        </div>
+      `);
+    }
+  }
+
+  async verImagen(req, res) {
+    const { idImagen } = req.params;
+
+    try {
+      console.info('[MONIPLA][IMAGENES][GET]', {
+        idImagen,
+      });
+
+      const imagen = await this.monitoreosService.obtenerImagenMuestreo(idImagen);
+
+      console.info('[MONIPLA][IMAGENES][OK]', {
+        idImagen: imagen.idImagen,
+        mime: imagen.mime,
+        bytes: imagen.buffer.length,
+      });
+
+      res.setHeader('Content-Type', imagen.mime);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'private, max-age=3600');
+
+      return res.send(imagen.buffer);
+    } catch (error) {
+      console.error('[MONIPLA][IMAGENES][ERROR]', {
+        idImagen,
+        error: error.message,
+      });
+
+      return res.status(404).send('Imagen no disponible.');
+    }
+  }
+
+  detalle(req, res) {
     return res.render('layouts/main', {
-      title: 'Historial de Monitoreo',
+      title: 'Detalle de Monitoreo',
       contentView: '../monitoreos/placeholder',
-      pageTitle: 'Historial de Monitoreo',
-      pageMessage: 'Modulo preparado para consultar monitoreos registrados.',
+      pageTitle: 'Detalle de Monitoreo',
+      pageMessage: `Modulo preparado para consultar el detalle del monitoreo ${req.params.idMuestreo}.`,
     });
   }
 
@@ -294,6 +412,19 @@ class MonitoreosController {
       muestreo: data.muestreo,
       values: data.values || this.monitoreosService.getValoresInicialesResultados(),
       opciones: data.opciones,
+    });
+  }
+
+  renderHistorial(res, data) {
+    return res.render('layouts/main', {
+      title: 'Historial de Monitoreos',
+      contentView: '../monitoreos/historial',
+      errors: data.errors || [],
+      success: null,
+      values: data.values,
+      opciones: data.opciones,
+      registros: data.registros || [],
+      paginacion: data.paginacion,
     });
   }
 }

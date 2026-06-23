@@ -1,0 +1,148 @@
+<%
+  const info = detalle.cabecera;
+%>
+
+<article class="detalle-panel-compacto">
+  <header class="detalle-compact-header">
+    <div>
+      <p class="eyebrow">Detalle</p>
+      <h2>Muestreo <%= detalle.numeroMuestreo %></h2>
+    </div>
+    <span class="status <%= detalle.estadoClass %>"><%= detalle.estadoLabel %></span>
+  </header>
+
+  <section class="detalle-contexto" aria-label="Contexto del monitoreo">
+    <p class="detalle-contexto-linea detalle-contexto-principal">
+      <strong><%= info.fundo %> / <%= info.campo %></strong>
+      <span><%= info.variedad %> - <%= info.cuartel %> - <%= info.estructura %></span>
+    </p>
+    <p class="detalle-contexto-linea">
+      <span>SDP <strong><%= info.sdp %></strong></span>
+      <span>CSG <strong><%= info.csg %></strong></span>
+      <span>Trazabilidad <strong><%= info.trazabilidad %></strong></span>
+    </p>
+    <p class="detalle-contexto-linea">
+      <span>Solicitud <strong><%= info.fechaSolicitudMuestra %></strong></span>
+      <span>Recepcion <strong><%= info.fechaRecepcionMuestra %></strong></span>
+      <span>Revision <strong><%= info.fechaRevisionMuestra %></strong></span>
+    </p>
+    <% if (info.observacionGeneral) { %>
+      <p class="detalle-contexto-nota"><strong>Observacion:</strong> <%= info.observacionGeneral %></p>
+    <% } %>
+  </section>
+
+  <section class="detalle-resultados">
+    <div class="detalle-section-header">
+      <h3>Resultado</h3>
+      <% if (detalle.estadoResultado === 'CON_PLAGAS') { %>
+        <span class="badge"><%= detalle.resumen.totalPlagas %> plagas - <%= detalle.resumen.totalConteos %> conteos</span>
+      <% } %>
+    </div>
+
+    <% if (detalle.estadoResultado === 'PENDIENTE') { %>
+      <div class="detalle-state-message">
+        <p>Este monitoreo aun no tiene resultados registrados.</p>
+        <a class="button button-primary button-fit" href="<%= detalle.urlResultados %>">Registrar resultados</a>
+      </div>
+    <% } else if (detalle.estadoResultado === 'SIN_PLAGAS') { %>
+      <div class="detalle-state-message detalle-state-success">
+        <p>Monitoreo registrado sin plagas detectadas.</p>
+      </div>
+      <% if (info.observacionResultado) { %>
+        <p class="detalle-contexto-nota"><strong>Observacion resultado:</strong> <%= info.observacionResultado %></p>
+      <% } %>
+    <% } else if (detalle.plagas.length === 0) { %>
+      <div class="detalle-state-message">
+        <p>El monitoreo esta marcado con plagas, pero no se encontraron resultados asociados.</p>
+      </div>
+    <% } else { %>
+      <div class="detalle-plagas-compactas">
+        <% detalle.plagas.forEach((plaga) => { %>
+          <article class="detalle-plaga-card">
+            <div class="detalle-plaga-card-header">
+              <div>
+                <h4><%= plaga.nombrePlaga %></h4>
+                <% if (plaga.nombreCientifico) { %>
+                  <p><%= plaga.nombreCientifico %></p>
+                <% } %>
+              </div>
+              <span class="total-chip total-chip-compact">Total: <%= plaga.cantidadTotal %></span>
+            </div>
+
+            <% if (plaga.tipoRegistro || plaga.esCuarentenaria) { %>
+              <div class="detalle-plaga-meta">
+                <% if (plaga.tipoRegistro) { %>
+                  <span class="badge"><%= plaga.tipoRegistro %></span>
+                <% } %>
+                <% if (plaga.esCuarentenaria) { %>
+                  <span class="badge badge-danger">Cuarentenaria</span>
+                <% } %>
+              </div>
+            <% } %>
+
+            <% if (plaga.detalleTexto || plaga.observacion) { %>
+              <div class="detalle-plaga-notas">
+                <% if (plaga.detalleTexto) { %><p><strong>Detalle:</strong> <%= plaga.detalleTexto %></p><% } %>
+                <% if (plaga.observacion) { %><p><strong>Observacion:</strong> <%= plaga.observacion %></p><% } %>
+              </div>
+            <% } %>
+
+            <table class="detalle-conteos-table">
+              <thead>
+                <tr>
+                  <th>Estadio</th>
+                  <th>Estado</th>
+                  <th>Cantidad</th>
+                </tr>
+              </thead>
+              <tbody>
+                <% if (plaga.conteos.length === 0) { %>
+                  <tr>
+                    <td class="empty-state" colspan="3">Sin conteos registrados.</td>
+                  </tr>
+                <% } %>
+                <% plaga.conteos.forEach((conteo) => { %>
+                  <tr>
+                    <td><%= conteo.estadio %></td>
+                    <td><%= conteo.estado %></td>
+                    <td><strong><%= conteo.cantidad %></strong></td>
+                  </tr>
+                <% }) %>
+              </tbody>
+            </table>
+          </article>
+        <% }) %>
+      </div>
+    <% } %>
+  </section>
+
+  <section class="detalle-evidencias-section">
+    <div class="detalle-section-header">
+      <h3>Evidencias</h3>
+      <span class="badge"><%= detalle.resumen.totalImagenes %> <%= detalle.resumen.totalImagenes === 1 ? 'imagen' : 'imagenes' %></span>
+    </div>
+
+    <% if (detalle.imagenes.length === 0) { %>
+      <p class="detalle-muted">Sin evidencia fotografica registrada.</p>
+    <% } else { %>
+      <div class="detalle-evidencias-grid">
+        <% detalle.imagenes.forEach((imagen) => { %>
+          <figure class="detalle-evidencia-card">
+            <img
+              class="detalle-evidencia-img"
+              src="<%= imagen.url %>"
+              alt="Evidencia <%= imagen.orden %> del muestreo <%= detalle.numeroMuestreo %>"
+              loading="lazy"
+            >
+            <figcaption>
+              <strong>Evidencia <%= imagen.orden %></strong>
+              <% if (imagen.comentario) { %>
+                <p><%= imagen.comentario %></p>
+              <% } %>
+            </figcaption>
+          </figure>
+        <% }) %>
+      </div>
+    <% } %>
+  </section>
+</article>

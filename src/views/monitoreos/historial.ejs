@@ -1,0 +1,217 @@
+<%
+  const selected = (currentValue, optionValue) => String(currentValue || '') === String(optionValue || '') ? 'selected' : '';
+  const totalRegistros = Number(paginacion.totalRegistros || 0);
+  const paginaActual = Number(paginacion.pagina || 1);
+  const totalPaginas = Number(paginacion.totalPaginas || 1);
+  const desdeRegistro = totalRegistros === 0 ? 0 : ((paginaActual - 1) * paginacion.pageSize) + 1;
+  const hastaRegistro = Math.min(paginaActual * paginacion.pageSize, totalRegistros);
+  const buildPageUrl = (page) => {
+    const params = new URLSearchParams();
+
+    Object.entries(values || {}).forEach(([key, value]) => {
+      if (value && key !== 'pagina' && key !== 'pageSize') {
+        params.set(key, value);
+      }
+    });
+
+    params.set('pagina', page);
+    return `/monitoreos/historial?${params.toString()}`;
+  };
+%>
+
+<section class="page-header">
+  <div>
+    <p class="eyebrow">Monitoreos</p>
+    <h1>Historial de monitoreos</h1>
+    <p>Consulta monitoreos registrados y filtra por origen, fecha, estructura o plaga.</p>
+  </div>
+
+  <a class="button button-secondary" href="/monitoreos/nuevo">Nuevo monitoreo</a>
+</section>
+
+<% if (errors && errors.length > 0) { %>
+  <div class="alert" role="alert">
+    <strong>Revise los filtros ingresados.</strong>
+    <ul class="message-list">
+      <% errors.forEach((message) => { %>
+        <li><%= message %></li>
+      <% }) %>
+    </ul>
+  </div>
+<% } %>
+
+<section class="form-panel historial-filter-panel">
+  <form class="form historial-filter-grid" action="/monitoreos/historial" method="GET" autocomplete="off">
+    <div class="form-group">
+      <label for="idFundo">Fundo</label>
+      <select id="idFundo" name="idFundo">
+        <option value="">Todos</option>
+        <% opciones.fundos.forEach((item) => { %>
+          <option value="<%= item.value %>" <%= selected(values.idFundo, item.value) %>><%= item.label %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="idCampo">Campo</label>
+      <select id="idCampo" name="idCampo">
+        <option value="">Todos</option>
+        <% opciones.campos.forEach((item) => { %>
+          <option value="<%= item.value %>" <%= selected(values.idCampo, item.value) %>><%= item.label %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="idVariedad">Variedad</label>
+      <select id="idVariedad" name="idVariedad">
+        <option value="">Todas</option>
+        <% opciones.variedades.forEach((item) => { %>
+          <option value="<%= item.value %>" <%= selected(values.idVariedad, item.value) %>><%= item.label %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="idCuartel">Cuartel</label>
+      <select id="idCuartel" name="idCuartel">
+        <option value="">Todos</option>
+        <% opciones.cuarteles.forEach((item) => { %>
+          <option value="<%= item.value %>" <%= selected(values.idCuartel, item.value) %>><%= item.label %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="fechaDesde">Fecha de monitoreo desde</label>
+      <input id="fechaDesde" name="fechaDesde" type="date" value="<%= values.fechaDesde || '' %>">
+    </div>
+
+    <div class="form-group">
+      <label for="fechaHasta">Fecha de monitoreo hasta</label>
+      <input id="fechaHasta" name="fechaHasta" type="date" value="<%= values.fechaHasta || '' %>">
+    </div>
+
+    <div class="form-group">
+      <label for="idEstructura">Tipo de estructura</label>
+      <select id="idEstructura" name="idEstructura">
+        <option value="">Todas</option>
+        <% opciones.estructuras.forEach((item) => { %>
+          <option value="<%= item.value %>" <%= selected(values.idEstructura, item.value) %>><%= item.label %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="idPlaga">Plaga</label>
+      <select id="idPlaga" name="idPlaga">
+        <option value="">Todas</option>
+        <% opciones.plagas.forEach((item) => { %>
+          <option value="<%= item.value %>" <%= selected(values.idPlaga, item.value) %>><%= item.label %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <% if (opciones.tiposPlaga && opciones.tiposPlaga.length > 0) { %>
+      <div class="form-group">
+        <label for="tipoPlaga">Tipo de plaga</label>
+        <select id="tipoPlaga" name="tipoPlaga">
+          <option value="">Todos</option>
+          <% opciones.tiposPlaga.forEach((item) => { %>
+            <option value="<%= item.value %>" <%= selected(values.tipoPlaga, item.value) %>><%= item.label %></option>
+          <% }) %>
+        </select>
+      </div>
+    <% } %>
+
+    <div class="form-group">
+      <label for="estadoResultado">Estado resultado</label>
+      <select id="estadoResultado" name="estadoResultado">
+        <option value="">Todos</option>
+        <% opciones.estadosResultado.forEach((item) => { %>
+          <option value="<%= item.value %>" <%= selected(values.estadoResultado, item.value) %>><%= item.label %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <div class="form-actions historial-filter-actions">
+      <a class="button button-secondary button-fit" href="/monitoreos/historial">Limpiar</a>
+      <button class="button button-primary button-fit" type="submit">Filtrar</button>
+    </div>
+  </form>
+</section>
+
+<section class="data-panel historial-panel">
+  <div class="historial-toolbar">
+    <div>
+      <strong><%= totalRegistros %> monitoreos encontrados</strong>
+      <p><%= totalRegistros === 0 ? 'Sin registros para los filtros seleccionados.' : `Mostrando ${desdeRegistro}-${hastaRegistro}` %></p>
+    </div>
+  </div>
+
+  <div class="table-wrap historial-table-wrapper">
+    <table class="data-table historial-table">
+      <thead>
+        <tr>
+          <th>Nro / Fecha</th>
+          <th>Origen</th>
+          <th>Estructura</th>
+          <th>Estado</th>
+          <th>Resultado</th>
+          <th>Evidencias</th>
+          <th>Accion</th>
+        </tr>
+      </thead>
+      <tbody>
+        <% if (registros.length === 0) { %>
+          <tr>
+            <td class="empty-state" colspan="7">No hay monitoreos para mostrar.</td>
+          </tr>
+        <% } %>
+
+        <% registros.forEach((registro) => { %>
+          <tr data-historial-row="<%= registro.idMuestreo %>">
+            <td class="historial-cell-main" data-label="Nro / Fecha">
+              <strong>Nro <%= registro.numeroMuestreo %></strong>
+              <span><%= registro.fechaMonitoreo %></span>
+            </td>
+            <td class="historial-origin" data-label="Origen">
+              <strong><%= registro.fundo %> / <%= registro.campo %></strong>
+              <span><%= registro.variedad %> - <%= registro.cuartel %></span>
+            </td>
+            <td class="historial-structure" data-label="Estructura"><%= registro.estructura %></td>
+            <td data-label="Estado"><span class="status <%= registro.estadoClass %>"><%= registro.estadoLabel %></span></td>
+            <td class="historial-result-summary" data-label="Resultado">
+              <span>Plagas: <strong><%= registro.plagasDetectadas %></strong></span>
+              <span>Ejemplares: <strong><%= registro.totalEjemplares %></strong></span>
+            </td>
+            <td class="historial-evidence" data-label="Evidencias"><%= registro.evidencias %></td>
+            <td data-label="Accion">
+              <button
+                class="button button-secondary button-small"
+                type="button"
+                data-action="toggle-detalle"
+                data-id-muestreo="<%= registro.idMuestreo %>"
+              >
+                Ver detalle
+              </button>
+            </td>
+          </tr>
+          <tr class="historial-detail-row" data-detail-row="<%= registro.idMuestreo %>" hidden>
+            <td colspan="7">
+              <div class="historial-detail-container" data-detail-container="<%= registro.idMuestreo %>"></div>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+
+  <nav class="pagination" aria-label="Paginacion historial">
+    <a class="button button-secondary button-fit <%= paginaActual <= 1 ? 'is-disabled' : '' %>" href="<%= paginaActual <= 1 ? '#' : buildPageUrl(paginaActual - 1) %>">Anterior</a>
+    <span>Pagina <%= paginaActual %> de <%= totalPaginas %></span>
+    <a class="button button-secondary button-fit <%= paginaActual >= totalPaginas ? 'is-disabled' : '' %>" href="<%= paginaActual >= totalPaginas ? '#' : buildPageUrl(paginaActual + 1) %>">Siguiente</a>
+  </nav>
+</section>
+
+<script src="/js/monitoreos-historial.js"></script>

@@ -64,6 +64,9 @@ router.get(
   monitoreosController.listarCuarteles
 );
 router.get('/monitoreos/historial', ensureAuthenticated, monitoreosController.historial);
+router.get('/monitoreos/imagenes/:idImagen', ensureAuthenticated, monitoreosController.verImagen);
+router.get('/monitoreos/:idMuestreo/detalle-parcial', ensureAuthenticated, monitoreosController.detalleParcial);
+router.get('/monitoreos/:idMuestreo/detalle', ensureAuthenticated, monitoreosController.detalle);
 router.get('/monitoreos/editar', ensureAuthenticated, monitoreosController.editar);
 
 module.exports = router;

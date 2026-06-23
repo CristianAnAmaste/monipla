@@ -166,6 +166,148 @@ class MonitoreosService {
     };
   }
 
+  async obtenerHistorialMonitoreos(query = {}) {
+    const filtros = this.normalizarFiltrosHistorial(query);
+    const errors = this.validarFiltrosHistorial(filtros);
+    const opciones = await this.monitoreosRepository.obtenerFiltrosHistorial();
+
+    if (errors.length > 0) {
+      return {
+        success: false,
+        errors,
+        values: filtros,
+        opciones,
+        registros: [],
+        paginacion: {
+          totalRegistros: 0,
+          pagina: filtros.pagina,
+          pageSize: filtros.pageSize,
+          totalPaginas: 1,
+        },
+      };
+    }
+
+    const resultado = await this.monitoreosRepository.listarHistorialMonitoreos(filtros);
+    const registros = resultado.registros.map((registro) => this.prepararRegistroHistorial(registro));
+
+    return {
+      success: true,
+      errors: [],
+      values: filtros,
+      opciones,
+      registros,
+      paginacion: {
+        totalRegistros: resultado.totalRegistros,
+        pagina: resultado.pagina,
+        pageSize: resultado.pageSize,
+        totalPaginas: resultado.totalPaginas,
+      },
+    };
+  }
+
+  async obtenerDetalleParcialMuestreo(idMuestreo) {
+    const muestreoId = this.normalizarIdEstricto(idMuestreo);
+
+    if (!muestreoId) {
+      throw new Error('ID_MUESTREO_INVALIDO');
+    }
+
+    const cabecera = await this.monitoreosRepository.obtenerDetalleMuestreo(muestreoId);
+
+    if (!cabecera) {
+      throw new Error('MUESTREO_NO_EXISTE');
+    }
+
+    const [filasResultados, imagenes] = await Promise.all([
+      cabecera.estado_resultado === 'CON_PLAGAS'
+        ? this.monitoreosRepository.obtenerResultadosAgrupadosMuestreo(muestreoId)
+        : Promise.resolve([]),
+      this.monitoreosRepository.obtenerImagenesMuestreo(muestreoId),
+    ]);
+
+    const estado = this.obtenerPresentacionEstadoResultado(cabecera.estado_resultado);
+    const plagas = this.agruparResultadosDetalle(filasResultados);
+    const totalConteos = plagas.reduce((total, plaga) => total + plaga.conteos.length, 0);
+
+    return {
+      idMuestreo: cabecera.id_muestreo,
+      numeroMuestreo: cabecera.numero_muestreo,
+      estadoResultado: cabecera.estado_resultado,
+      estadoLabel: estado.label,
+      estadoClass: estado.className,
+      urlResultados: `/monitoreos/${cabecera.id_muestreo}/resultados`,
+      cabecera: {
+        idMuestreo: cabecera.id_muestreo,
+        numeroMuestreo: cabecera.numero_muestreo,
+        idOrigenMuestra: cabecera.id_origen_muestra,
+        fundo: cabecera.nombre_fundo || '-',
+        campo: cabecera.nombre_campo || '-',
+        variedad: cabecera.nombre_variedad || '-',
+        cuartel: cabecera.codigo_cuartel ? `Cuartel ${cabecera.codigo_cuartel}` : '-',
+        genCuartel: cabecera.gen_cuartel || '-',
+        sdp: cabecera.sdp || '-',
+        csg: cabecera.csg || '-',
+        trazabilidad: cabecera.trazabilidad || '-',
+        estructura: cabecera.nombre_estructura || '-',
+        fechaSolicitudMuestra: this.formatearFechaIso(cabecera.fecha_solicitud_muestra),
+        fechaRecepcionMuestra: this.formatearFechaIso(cabecera.fecha_recepcion_muestra),
+        fechaRevisionMuestra: this.formatearFechaIso(cabecera.fecha_revision_muestra),
+        fechaMonitoreo: this.formatearFechaIso(cabecera.fecha_muestreo),
+        observacionGeneral: cabecera.observacion_general || '',
+        observacionResultado: cabecera.observacion_resultado || '',
+        fechaResultado: this.formatearFechaIso(cabecera.fecha_resultado),
+        usuarioCreacion: cabecera.nombre_usuario_creacion || (cabecera.id_usuario_creacion ? `ID ${cabecera.id_usuario_creacion}` : '-'),
+        usuarioResultado: cabecera.nombre_usuario_resultado || (cabecera.id_usuario_resultado ? `ID ${cabecera.id_usuario_resultado}` : '-'),
+        fechaCreacion: this.formatearFechaIso(cabecera.fecha_creacion),
+        fechaModificacion: this.formatearFechaIso(cabecera.fecha_modificacion),
+      },
+      plagas,
+      imagenes: imagenes.map((imagen) => ({
+        idImagen: imagen.id_imagen,
+        orden: imagen.orden,
+        mime: imagen.mime,
+        comentario: imagen.comentario || '',
+        fechaCreacion: this.formatearFechaIso(imagen.fecha_creacion),
+        url: `/monitoreos/imagenes/${imagen.id_imagen}`,
+      })),
+      resumen: {
+        totalPlagas: plagas.length,
+        totalConteos,
+        totalImagenes: imagenes.length,
+      },
+    };
+  }
+
+  async obtenerImagenMuestreo(idImagen) {
+    const imagenId = this.normalizarIdEstricto(idImagen);
+
+    if (!imagenId) {
+      throw new Error('ID_IMAGEN_INVALIDO');
+    }
+
+    const imagen = await this.monitoreosRepository.obtenerImagenPorId(imagenId);
+
+    if (!imagen) {
+      throw new Error('IMAGEN_NO_EXISTE');
+    }
+
+    const mime = String(imagen.mime || '').trim().toLowerCase();
+
+    if (!MIMES_IMAGEN_PERMITIDOS.has(mime)) {
+      throw new Error('MIME_IMAGEN_NO_PERMITIDO');
+    }
+
+    if (!imagen.imagen || imagen.imagen.length === 0) {
+      throw new Error('IMAGEN_SIN_BUFFER');
+    }
+
+    return {
+      idImagen: imagen.id_imagen,
+      buffer: imagen.imagen,
+      mime,
+    };
+  }
+
   async guardarResultadosMuestreo(idMuestreo, body, usuarioSesion, archivos = {}) {
     const muestreoId = this.normalizarId(idMuestreo);
     const values = this.normalizarResultadosEntrada(body);
@@ -642,6 +784,122 @@ class MonitoreosService {
     return '';
   }
 
+  normalizarFiltrosHistorial(query) {
+    return {
+      idFundo: this.normalizarId(query.idFundo),
+      idCampo: this.normalizarId(query.idCampo),
+      idVariedad: this.normalizarId(query.idVariedad),
+      idCuartel: this.normalizarId(query.idCuartel),
+      fechaDesde: String(query.fechaDesde || '').trim(),
+      fechaHasta: String(query.fechaHasta || '').trim(),
+      idEstructura: this.normalizarId(query.idEstructura),
+      idPlaga: this.normalizarId(query.idPlaga),
+      tipoPlaga: String(query.tipoPlaga || '').trim(),
+      estadoResultado: this.normalizarEstadoResultado(query.estadoResultado),
+      pagina: this.normalizarPagina(query.pagina),
+      pageSize: 20,
+    };
+  }
+
+  validarFiltrosHistorial(filtros) {
+    const errors = [];
+
+    if (filtros.fechaDesde && !this.esFechaValida(filtros.fechaDesde)) {
+      errors.push('La fecha de monitoreo desde no tiene un formato valido.');
+    }
+
+    if (filtros.fechaHasta && !this.esFechaValida(filtros.fechaHasta)) {
+      errors.push('La fecha de monitoreo hasta no tiene un formato valido.');
+    }
+
+    if (
+      this.esFechaValida(filtros.fechaDesde)
+      && this.esFechaValida(filtros.fechaHasta)
+      && filtros.fechaDesde > filtros.fechaHasta
+    ) {
+      errors.push('La fecha de monitoreo desde no puede ser posterior a la fecha hasta.');
+    }
+
+    return errors;
+  }
+
+  normalizarEstadoResultado(value) {
+    const estado = String(value || '').trim();
+
+    if (['PENDIENTE', 'SIN_PLAGAS', 'CON_PLAGAS'].includes(estado)) {
+      return estado;
+    }
+
+    return '';
+  }
+
+  normalizarPagina(value) {
+    const pagina = Number.parseInt(value, 10);
+    return Number.isInteger(pagina) && pagina > 0 ? pagina : 1;
+  }
+
+  prepararRegistroHistorial(registro) {
+    const estado = this.obtenerPresentacionEstadoResultado(registro.estado_resultado);
+    const estaPendiente = registro.estado_resultado === 'PENDIENTE';
+    const sinPlagas = registro.estado_resultado === 'SIN_PLAGAS';
+    const totalImagenes = Number(registro.total_imagenes || 0);
+
+    return {
+      idMuestreo: registro.id_muestreo,
+      numeroMuestreo: registro.numero_muestreo,
+      fechaMonitoreo: this.formatearFechaIso(registro.fecha_muestreo),
+      fundo: registro.nombre_fundo,
+      campo: registro.nombre_campo,
+      variedad: registro.nombre_variedad,
+      cuartel: `Cuartel ${registro.codigo_cuartel}`,
+      estructura: registro.nombre_estructura,
+      estadoResultado: registro.estado_resultado,
+      estadoLabel: estado.label,
+      estadoClass: estado.className,
+      plagasDetectadas: estaPendiente ? '-' : sinPlagas ? '0' : String(Number(registro.plagas_detectadas || 0)),
+      totalEjemplares: estaPendiente ? '-' : sinPlagas ? '0' : String(Number(registro.total_ejemplares || 0)),
+      evidencias: totalImagenes > 0
+        ? `${totalImagenes} ${totalImagenes === 1 ? 'imagen' : 'imagenes'}`
+        : 'Sin evidencia',
+      totalImagenes,
+    };
+  }
+
+  obtenerPresentacionEstadoResultado(estadoResultado) {
+    if (estadoResultado === 'SIN_PLAGAS') {
+      return {
+        label: 'Sin plagas',
+        className: 'status-sin-plagas',
+      };
+    }
+
+    if (estadoResultado === 'CON_PLAGAS') {
+      return {
+        label: 'Con plagas',
+        className: 'status-con-plagas',
+      };
+    }
+
+    return {
+      label: 'Pendiente',
+      className: 'status-pendiente',
+    };
+  }
+
+  formatearFechaIso(value) {
+    if (!value) {
+      return '-';
+    }
+
+    const date = value instanceof Date ? value : new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return String(value).slice(0, 10);
+    }
+
+    return date.toISOString().slice(0, 10);
+  }
+
   contarImagenesRecibidas(files) {
     if (!files || typeof files !== 'object') {
       return 0;
@@ -947,6 +1205,49 @@ class MonitoreosService {
         idEstadio: String(fila.idEstadio || '').trim(),
         idEstadoEjemplar: String(fila.idEstadoEjemplar || '').trim(),
         cantidad: String(fila.cantidad || '').trim(),
+      });
+    });
+
+    return agrupadas;
+  }
+
+  agruparResultadosDetalle(filas) {
+    if (!Array.isArray(filas) || filas.length === 0) {
+      return [];
+    }
+
+    const agrupadas = [];
+    const indices = new Map();
+
+    filas.forEach((fila) => {
+      if (!indices.has(fila.id_resultado_plaga)) {
+        indices.set(fila.id_resultado_plaga, agrupadas.length);
+        agrupadas.push({
+          idResultadoPlaga: fila.id_resultado_plaga,
+          idPlaga: fila.id_plaga,
+          nombrePlaga: fila.nombre_plaga || 'Plaga sin nombre',
+          nombreCientifico: fila.nombre_cientifico || '',
+          tipoRegistro: fila.tipo_registro || '',
+          esCuarentenaria: fila.es_cuarentenaria === true || fila.es_cuarentenaria === 1,
+          detalleTexto: fila.detalle_texto || '',
+          observacion: fila.observacion || '',
+          cantidadTotal: Number(fila.cantidad_total || 0),
+          fechaCreacion: this.formatearFechaIso(fila.fecha_resultado_plaga),
+          conteos: [],
+        });
+      }
+
+      if (!fila.id_resultado_conteo) {
+        return;
+      }
+
+      agrupadas[indices.get(fila.id_resultado_plaga)].conteos.push({
+        idResultadoConteo: fila.id_resultado_conteo,
+        idEstadio: fila.id_estadio,
+        estadio: fila.nombre_estadio || '-',
+        idEstadoEjemplar: fila.id_estado_ejemplar,
+        estado: fila.nombre_estado || '-',
+        cantidad: Number(fila.cantidad || 0),
       });
     });
 
