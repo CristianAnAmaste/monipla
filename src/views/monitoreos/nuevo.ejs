@@ -76,6 +76,26 @@
     </div>
 
     <div class="form-group">
+      <label for="id_muestreador">Muestreador</label>
+      <select id="id_muestreador" name="id_muestreador" required>
+        <option value="">Seleccione un muestreador</option>
+        <% opciones.muestreadores.forEach((item) => { %>
+          <option value="<%= item.value %>" <%= Number(values.idMuestreador) === Number(item.value) ? 'selected' : '' %>><%= item.label %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="id_estadofenologico">Estado fenologico</label>
+      <select id="id_estadofenologico" name="id_estadofenologico" required>
+        <option value="">Seleccione un estado fenologico</option>
+        <% opciones.estadosFenologicos.forEach((item) => { %>
+          <option value="<%= item.value %>" <%= Number(values.idEstadoFenologico) === Number(item.value) ? 'selected' : '' %>><%= item.label %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <div class="form-group">
       <label for="fechaSolicitudMuestra">Fecha solicitud muestra</label>
       <input
         id="fechaSolicitudMuestra"

@@ -1182,6 +1182,20 @@ select:focus {
   color: var(--text);
 }
 
+.historial-agroclima-resumen {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(216, 224, 230, 0.72);
+}
+
+.historial-actions,
+.detalle-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .pagination {
   display: flex;
   align-items: center;
@@ -1273,6 +1287,7 @@ select:focus {
 
 .detalle-contexto,
 .detalle-resultados,
+.detalle-agroclima-card,
 .detalle-evidencias-section {
   display: grid;
   gap: 10px;
@@ -1286,6 +1301,30 @@ select:focus {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f8faf9;
+}
+
+.detalle-agroclima-card {
+  padding: 12px;
+  border: 1px solid rgba(36, 116, 90, 0.18);
+  border-radius: 8px;
+  background: #f8faf9;
+}
+
+.detalle-agroclima-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+}
+
+.detalle-agroclima-grid p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+  overflow-wrap: break-word;
+}
+
+.detalle-agroclima-grid strong {
+  color: var(--text);
 }
 
 .detalle-contexto-linea {
@@ -1529,8 +1568,17 @@ select:focus {
   .detalle-compact-header,
   .detalle-section-header,
   .detalle-plaga-card-header,
+  .detalle-header-actions,
   .detalle-state-message {
     flex-direction: column;
+  }
+
+  .detalle-header-actions {
+    align-items: flex-start;
+  }
+
+  .detalle-agroclima-grid {
+    grid-template-columns: 1fr;
   }
 
   .modal-shell {

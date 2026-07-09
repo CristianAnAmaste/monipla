@@ -1,5 +1,7 @@
 const sharp = require('sharp');
 const MonitoreosRepository = require('../repositories/monitoreos.repository');
+const AgroclimaMoniplaService = require('./agroclimaMonipla.service');
+const MonitoreoPdfService = require('./monitoreoPdf.service');
 
 const MIMES_IMAGEN_PERMITIDOS = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const MAX_IMAGENES_MONITOREO = 3;
@@ -9,14 +11,22 @@ const MAX_COMENTARIO_IMAGEN = 400;
 const HISTORIAL_PAGE_SIZE = 10;
 
 class MonitoreosService {
-  constructor(monitoreosRepository = new MonitoreosRepository()) {
+  constructor(
+    monitoreosRepository = new MonitoreosRepository(),
+    agroclimaService = new AgroclimaMoniplaService(),
+    monitoreoPdfService = new MonitoreoPdfService()
+  ) {
     this.monitoreosRepository = monitoreosRepository;
+    this.agroclimaService = agroclimaService;
+    this.monitoreoPdfService = monitoreoPdfService;
   }
 
   async getFormularioData(values = this.getValoresIniciales()) {
-    const [fundos, estructuras] = await Promise.all([
+    const [fundos, estructuras, estadosFenologicos, muestreadores] = await Promise.all([
       this.monitoreosRepository.findFondosDisponibles(),
       this.monitoreosRepository.findEstructurasActivas(),
+      this.monitoreosRepository.findEstadosFenologicosActivos(),
+      this.monitoreosRepository.findMuestreadoresActivos(),
     ]);
 
     return {
@@ -24,6 +34,8 @@ class MonitoreosService {
       opciones: {
         fundos,
         estructuras,
+        estadosFenologicos,
+        muestreadores,
       },
     };
   }
@@ -104,11 +116,18 @@ class MonitoreosService {
         fechaMuestreo: resolucion.values.fechaRevisionMuestra,
         fechaRevisionMuestra: resolucion.values.fechaRevisionMuestra,
         idEstructura: resolucion.values.idEstructura,
+        idMuestreador: resolucion.values.idMuestreador,
+        idEstadoFenologico: resolucion.values.idEstadoFenologico,
         observacionGeneral: resolucion.values.observacionGeneral || null,
         idUsuarioCreacion,
         fechaSolicitudMuestra: resolucion.values.fechaSolicitudMuestra,
         fechaRecepcionMuestra: resolucion.values.fechaRecepcionMuestra,
       },
+      calcularAgroclimaSnapshot: (idOrigenMuestra, transaction) => this.agroclimaService.calcularSnapshotSeguro(
+        idOrigenMuestra,
+        resolucion.values.fechaRecepcionMuestra,
+        transaction
+      ),
     };
 
     const cabecera = await this.monitoreosRepository.crearCabeceraMonitoreoTransaccional(payload);
@@ -229,6 +248,8 @@ class MonitoreosService {
     const estado = this.obtenerPresentacionEstadoResultado(cabecera.estado_resultado);
     const plagas = this.agruparResultadosDetalle(filasResultados);
     const totalConteos = plagas.reduce((total, plaga) => total + plaga.conteos.length, 0);
+    const resumenConteos = this.calcularResumenConteos(plagas);
+    const responsables = this.prepararResponsablesPresentacion(cabecera);
 
     return {
       idMuestreo: cabecera.id_muestreo,
@@ -237,6 +258,7 @@ class MonitoreosService {
       estadoLabel: estado.label,
       estadoClass: estado.className,
       urlResultados: `/monitoreos/${cabecera.id_muestreo}/resultados`,
+      urlPdf: `/monitoreos/${cabecera.id_muestreo}/pdf`,
       cabecera: {
         idMuestreo: cabecera.id_muestreo,
         numeroMuestreo: cabecera.numero_muestreo,
@@ -250,6 +272,8 @@ class MonitoreosService {
         csg: cabecera.csg || '-',
         trazabilidad: cabecera.trazabilidad || '-',
         estructura: cabecera.nombre_estructura || '-',
+        muestreador: cabecera.nombre_muestreador || '',
+        estadoFenologico: cabecera.nombre_estado_fenologico || '',
         fechaSolicitudMuestra: this.formatearFechaIso(cabecera.fecha_solicitud_muestra),
         fechaRecepcionMuestra: this.formatearFechaIso(cabecera.fecha_recepcion_muestra),
         fechaRevisionMuestra: this.formatearFechaIso(cabecera.fecha_revision_muestra),
@@ -257,11 +281,14 @@ class MonitoreosService {
         observacionGeneral: cabecera.observacion_general || '',
         observacionResultado: cabecera.observacion_resultado || '',
         fechaResultado: this.formatearFechaIso(cabecera.fecha_resultado),
-        usuarioCreacion: cabecera.nombre_usuario_creacion || (cabecera.id_usuario_creacion ? `ID ${cabecera.id_usuario_creacion}` : '-'),
-        usuarioResultado: cabecera.nombre_usuario_resultado || (cabecera.id_usuario_resultado ? `ID ${cabecera.id_usuario_resultado}` : '-'),
+        personaEnvioMuestra: responsables.personaEnvioMuestra,
+        usuarioCreacion: responsables.usuarioCreacion,
+        usuarioResultado: responsables.usuarioResultado,
         fechaCreacion: this.formatearFechaIso(cabecera.fecha_creacion),
         fechaModificacion: this.formatearFechaIso(cabecera.fecha_modificacion),
       },
+      responsables,
+      agroclima: this.prepararAgroclimaPresentacion(cabecera),
       plagas,
       imagenes: imagenes.map((imagen) => ({
         idImagen: imagen.id_imagen,
@@ -274,8 +301,39 @@ class MonitoreosService {
       resumen: {
         totalPlagas: plagas.length,
         totalConteos,
+        totalEjemplares: resumenConteos.totalEjemplares,
+        totalesPorEstado: resumenConteos.totalesPorEstado,
+        totalesPorEstadio: resumenConteos.totalesPorEstadio,
         totalImagenes: imagenes.length,
       },
+    };
+  }
+
+  async generarPdfMuestreo(idMuestreo) {
+    const detalle = await this.obtenerDetalleParcialMuestreo(idMuestreo);
+    const generatedAt = new Date();
+    detalle.imagenes = await Promise.all(detalle.imagenes.map(async (imagen) => {
+      try {
+        const registro = await this.monitoreosRepository.obtenerImagenPorId(imagen.idImagen);
+
+        return {
+          ...imagen,
+          buffer: registro && registro.imagen ? registro.imagen : null,
+        };
+      } catch (error) {
+        console.warn('[MONIPLA][PDF][IMAGEN_NO_DISPONIBLE]', {
+          idMuestreo: detalle.idMuestreo,
+          idImagen: imagen.idImagen,
+          error: error.message,
+        });
+
+        return imagen;
+      }
+    }));
+
+    return {
+      filename: `monipla-muestreo-${detalle.numeroMuestreo}.pdf`,
+      buffer: await this.monitoreoPdfService.generarInforme(detalle, generatedAt),
     };
   }
 
@@ -582,6 +640,14 @@ class MonitoreosService {
       errors.push('Debe seleccionar una estructura.');
     }
 
+    if (!values.idMuestreador) {
+      errors.push('Debe seleccionar un muestreador.');
+    }
+
+    if (!values.idEstadoFenologico) {
+      errors.push('Debe seleccionar un estado fenologico.');
+    }
+
     if (!values.fechaSolicitudMuestra) {
       errors.push('Debe ingresar la fecha de solicitud de muestra.');
     }
@@ -653,6 +719,22 @@ class MonitoreosService {
       }
     }
 
+    if (errors.length === 0) {
+      const muestreador = await this.monitoreosRepository.findMuestreadorById(values.idMuestreador);
+
+      if (!muestreador || (muestreador.activo !== true && muestreador.activo !== 1)) {
+        errors.push('El muestreador seleccionado no esta disponible.');
+      }
+    }
+
+    if (errors.length === 0) {
+      const estadoFenologico = await this.monitoreosRepository.findEstadoFenologicoById(values.idEstadoFenologico);
+
+      if (!estadoFenologico || (estadoFenologico.estado !== true && estadoFenologico.estado !== 1)) {
+        errors.push('El estado fenologico seleccionado no esta disponible.');
+      }
+    }
+
     if (errors.length > 0) {
       return {
         success: false,
@@ -677,6 +759,8 @@ class MonitoreosService {
       genVariedad: '',
       genCuartel: '',
       idEstructura: '',
+      idMuestreador: '',
+      idEstadoFenologico: '',
       fechaSolicitudMuestra: '',
       fechaRecepcionMuestra: '',
       fechaRevisionMuestra: '',
@@ -720,6 +804,8 @@ class MonitoreosService {
       genVariedad: this.normalizarId(data.genVariedad),
       genCuartel: this.normalizarId(data.genCuartel),
       idEstructura: this.normalizarId(data.idEstructura),
+      idMuestreador: this.normalizarId(data.id_muestreador),
+      idEstadoFenologico: this.normalizarId(data.id_estadofenologico),
       fechaSolicitudMuestra: (data.fechaSolicitudMuestra || '').trim(),
       fechaRecepcionMuestra: (data.fechaRecepcionMuestra || '').trim(),
       fechaRevisionMuestra: (data.fechaRevisionMuestra || '').trim(),
@@ -867,6 +953,83 @@ class MonitoreosService {
         ? `${totalImagenes} ${totalImagenes === 1 ? 'imagen' : 'imagenes'}`
         : 'Sin evidencia',
       totalImagenes,
+      agroclima: this.prepararAgroclimaPresentacion(registro),
+    };
+  }
+
+  prepararAgroclimaPresentacion(row) {
+    const horasFrio = this.formatearDecimalAgroclima(row.horas_frio_acumuladas);
+    const diasGrado = this.formatearDecimalAgroclima(row.dias_grado_acumulados);
+    const estacion = String(row.nombre_estacion_meteo || '').trim();
+    const tieneEstacion = Boolean(estacion || row.estacion_meteo_uuid);
+    const observacion = String(row.agroclima_observacion || '').trim();
+    const fechaCorte = this.formatearFechaIso(row.fecha_corte_agroclima);
+    const semanaIso = row.semana_iso_corte == null ? '' : String(row.semana_iso_corte).padStart(2, '0');
+    const temporada = String(row.temporada_agroclima || '').trim();
+    const mostrarSinEstacion = !tieneEstacion
+      || /sin estaci[o\u00f3]n|no hay estaci[o\u00f3]n/i.test(observacion);
+
+    return {
+      tieneDatos: Boolean(horasFrio || diasGrado || observacion || mostrarSinEstacion),
+      tieneEstacion,
+      mostrarSinEstacion,
+      estacion,
+      fechaCorte: fechaCorte === '-' ? '' : fechaCorte,
+      semanaIso,
+      temporada,
+      horasFrio,
+      diasGrado,
+      observacion: mostrarSinEstacion ? '' : observacion,
+    };
+  }
+
+  prepararResponsablesPresentacion(row) {
+    const nombreMuestrador = String(row.nombre_muestreador || '').trim();
+    const nombreUsuarioCreacion = String(row.nombre_usuario_creacion || '').trim();
+    const nombreUsuarioResultado = String(row.nombre_usuario_resultado || '').trim();
+
+    return {
+      personaEnvioMuestra: nombreMuestrador || 'No registrada',
+      usuarioCreacion: nombreUsuarioCreacion || 'No registrado',
+      usuarioResultado: row.id_usuario_resultado ? (nombreUsuarioResultado || 'No registrado') : 'Pendiente',
+    };
+  }
+
+  formatearDecimalAgroclima(value) {
+    if (value === null || value === undefined || value === '') {
+      return '';
+    }
+
+    const numero = Number(value);
+
+    if (!Number.isFinite(numero)) {
+      return '';
+    }
+
+    return new Intl.NumberFormat('es-CL', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(numero);
+  }
+
+  calcularResumenConteos(plagas) {
+    const totalPorEstado = new Map();
+    const totalPorEstadio = new Map();
+    let totalEjemplares = 0;
+
+    plagas.forEach((plaga) => {
+      plaga.conteos.forEach((conteo) => {
+        const cantidad = Number(conteo.cantidad || 0);
+        totalEjemplares += cantidad;
+        totalPorEstado.set(conteo.estado, (totalPorEstado.get(conteo.estado) || 0) + cantidad);
+        totalPorEstadio.set(conteo.estadio, (totalPorEstadio.get(conteo.estadio) || 0) + cantidad);
+      });
+    });
+
+    return {
+      totalEjemplares,
+      totalesPorEstado: Array.from(totalPorEstado, ([nombre, cantidad]) => ({ nombre, cantidad })),
+      totalesPorEstadio: Array.from(totalPorEstadio, ([nombre, cantidad]) => ({ nombre, cantidad })),
     };
   }
 

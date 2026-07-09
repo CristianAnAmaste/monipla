@@ -184,17 +184,33 @@
             <td class="historial-result-summary" data-label="Resultado">
               <span>Plagas: <strong><%= registro.plagasDetectadas %></strong></span>
               <span>Ejemplares: <strong><%= registro.totalEjemplares %></strong></span>
+              <% if (registro.agroclima && registro.agroclima.tieneDatos) { %>
+                <span class="historial-agroclima-resumen">
+                  <% if (registro.agroclima.horasFrio) { %>
+                    <strong>Horas fr&iacute;o acumuladas:</strong> <%= registro.agroclima.horasFrio %> horas
+                  <% } else if (registro.agroclima.diasGrado) { %>
+                    <strong>Grados d&iacute;a acumulados:</strong> <%= registro.agroclima.diasGrado %> GD
+                  <% } else if (registro.agroclima.mostrarSinEstacion) { %>
+                    No hay estaci&oacute;n para el fundo.
+                  <% } else if (registro.agroclima.observacion) { %>
+                    <%= registro.agroclima.observacion %>
+                  <% } %>
+                </span>
+              <% } %>
             </td>
             <td class="historial-evidence" data-label="Evidencias"><%= registro.evidencias %></td>
             <td data-label="Accion">
-              <button
-                class="button button-secondary button-small"
-                type="button"
-                data-action="toggle-detalle"
-                data-id-muestreo="<%= registro.idMuestreo %>"
-              >
-                Ver detalle
-              </button>
+              <div class="historial-actions">
+                <button
+                  class="button button-secondary button-small"
+                  type="button"
+                  data-action="toggle-detalle"
+                  data-id-muestreo="<%= registro.idMuestreo %>"
+                >
+                  Ver detalle
+                </button>
+                <a class="button button-secondary button-small" href="/monitoreos/<%= registro.idMuestreo %>/pdf">PDF</a>
+              </div>
             </td>
           </tr>
           <tr class="historial-detail-row" data-detail-row="<%= registro.idMuestreo %>" hidden>

@@ -14,6 +14,7 @@ class MonitoreosController {
     this.listarCuarteles = this.listarCuarteles.bind(this);
     this.historial = this.historial.bind(this);
     this.detalleParcial = this.detalleParcial.bind(this);
+    this.descargarPdf = this.descargarPdf.bind(this);
     this.verImagen = this.verImagen.bind(this);
     this.detalle = this.detalle.bind(this);
     this.editar = this.editar.bind(this);
@@ -35,6 +36,8 @@ class MonitoreosController {
         opciones: {
           fundos: [],
           estructuras: [],
+          estadosFenologicos: [],
+          muestreadores: [],
         },
       });
     }
@@ -73,6 +76,8 @@ class MonitoreosController {
           opciones: {
             fundos: [],
             estructuras: [],
+            estadosFenologicos: [],
+            muestreadores: [],
           },
         };
       }
@@ -373,6 +378,33 @@ class MonitoreosController {
       });
 
       return res.status(404).send('Imagen no disponible.');
+    }
+  }
+
+  async descargarPdf(req, res) {
+    const { idMuestreo } = req.params;
+
+    try {
+      const pdf = await this.monitoreosService.generarPdfMuestreo(idMuestreo);
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${pdf.filename}"`);
+      res.setHeader('Content-Length', pdf.buffer.length);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+
+      return res.send(pdf.buffer);
+    } catch (error) {
+      console.error('[MONIPLA][PDF][ERROR]', {
+        idMuestreo,
+        error: error.message,
+      });
+
+      return res.status(404).render('layouts/main', {
+        title: 'PDF de Monitoreo',
+        contentView: '../monitoreos/placeholder',
+        pageTitle: 'PDF no disponible',
+        pageMessage: 'No fue posible generar el PDF del monitoreo solicitado.',
+      });
     }
   }
 

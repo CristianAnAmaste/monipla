@@ -140,6 +140,36 @@ class MonitoreosRepository {
     return result.recordset;
   }
 
+  async findEstadosFenologicosActivos() {
+    const pool = await poolPromise;
+
+    const result = await pool.request().query(`
+      SELECT
+        id_estadofenologico AS value,
+        LTRIM(RTRIM(nom_estadofenologico)) AS label
+      FROM dbo.estado_fenologico
+      WHERE estado = 1
+      ORDER BY nom_estadofenologico ASC
+    `);
+
+    return result.recordset;
+  }
+
+  async findMuestreadoresActivos() {
+    const pool = await poolPromise;
+
+    const result = await pool.request().query(`
+      SELECT
+        id_monitoreador AS value,
+        LTRIM(RTRIM(nombre_monitoreador)) AS label
+      FROM dbo.moni_monitoreadores
+      WHERE activo = 1
+      ORDER BY nombre_monitoreador ASC
+    `);
+
+    return result.recordset;
+  }
+
   async findEstructuraById(idEstructura) {
     const pool = await poolPromise;
 
@@ -153,6 +183,42 @@ class MonitoreosRepository {
           activo
         FROM dbo.MONIPLA_ESTRUCTURA
         WHERE id_estructura = @idEstructura
+      `);
+
+    return result.recordset[0] || null;
+  }
+
+  async findEstadoFenologicoById(idEstadoFenologico) {
+    const pool = await poolPromise;
+
+    const result = await pool
+      .request()
+      .input('idEstadoFenologico', sql.Int, idEstadoFenologico)
+      .query(`
+        SELECT TOP 1
+          id_estadofenologico,
+          nom_estadofenologico,
+          estado
+        FROM dbo.estado_fenologico
+        WHERE id_estadofenologico = @idEstadoFenologico
+      `);
+
+    return result.recordset[0] || null;
+  }
+
+  async findMuestreadorById(idMuestreador) {
+    const pool = await poolPromise;
+
+    const result = await pool
+      .request()
+      .input('idMuestreador', sql.Int, idMuestreador)
+      .query(`
+        SELECT TOP 1
+          id_monitoreador,
+          nombre_monitoreador,
+          activo
+        FROM dbo.moni_monitoreadores
+        WHERE id_monitoreador = @idMuestreador
       `);
 
     return result.recordset[0] || null;
@@ -291,6 +357,7 @@ class MonitoreosRepository {
 
   async crearMuestreo(data, transaction = null) {
     const request = await this.createRequest(transaction);
+    const agroclima = data.agroclimaSnapshot || {};
 
     const result = await request
       .input('numeroMuestreo', sql.Int, data.numeroMuestreo)
@@ -303,6 +370,16 @@ class MonitoreosRepository {
       .input('idUsuarioCreacion', sql.Int, data.idUsuarioCreacion)
       .input('fechaSolicitudMuestra', sql.Date, data.fechaSolicitudMuestra)
       .input('fechaRecepcionMuestra', sql.Date, data.fechaRecepcionMuestra)
+      .input('idMuestreador', sql.Int, data.idMuestreador)
+      .input('idEstadoFenologico', sql.Int, data.idEstadoFenologico)
+      .input('horasFrioAcumuladas', sql.Decimal(10, 2), agroclima.horasFrioAcumuladas ?? null)
+      .input('diasGradoAcumulados', sql.Decimal(10, 2), agroclima.diasGradoAcumulados ?? null)
+      .input('estacionMeteoUuid', sql.UniqueIdentifier, agroclima.estacionMeteoUuid || null)
+      .input('nombreEstacionMeteo', sql.NVarChar(100), agroclima.nombreEstacionMeteo || null)
+      .input('fechaCorteAgroclima', sql.Date, agroclima.fechaCorteAgroclima || null)
+      .input('semanaIsoCorte', sql.TinyInt, agroclima.semanaIsoCorte ?? null)
+      .input('temporadaAgroclima', sql.VarChar(9), agroclima.temporadaAgroclima || null)
+      .input('agroclimaObservacion', sql.NVarChar(250), agroclima.agroclimaObservacion || null)
       .query(`
         INSERT INTO dbo.MONIPLA_MUESTREO (
           numero_muestreo,
@@ -317,7 +394,17 @@ class MonitoreosRepository {
           fecha_creacion,
           fecha_modificacion,
           fecha_solicitud_muestra,
-          fecha_recepcion_muestra
+          fecha_recepcion_muestra,
+          id_muestrador,
+          id_estadofenologico,
+          horas_frio_acumuladas,
+          dias_grado_acumulados,
+          estacion_meteo_uuid,
+          nombre_estacion_meteo,
+          fecha_corte_agroclima,
+          semana_iso_corte,
+          temporada_agroclima,
+          agroclima_observacion
         )
         OUTPUT
           INSERTED.id_muestreo,
@@ -335,7 +422,17 @@ class MonitoreosRepository {
           SYSDATETIME(),
           NULL,
           @fechaSolicitudMuestra,
-          @fechaRecepcionMuestra
+          @fechaRecepcionMuestra,
+          @idMuestreador,
+          @idEstadoFenologico,
+          @horasFrioAcumuladas,
+          @diasGradoAcumulados,
+          @estacionMeteoUuid,
+          @nombreEstacionMeteo,
+          @fechaCorteAgroclima,
+          @semanaIsoCorte,
+          @temporadaAgroclima,
+          @agroclimaObservacion
         )
       `);
 
@@ -358,11 +455,15 @@ class MonitoreosRepository {
       }
 
       const numeroMuestreo = await this.obtenerSiguienteNumeroMuestreo(transaction);
+      const agroclimaSnapshot = typeof data.calcularAgroclimaSnapshot === 'function'
+        ? await data.calcularAgroclimaSnapshot(origenMuestra.id_origen_muestra, transaction)
+        : null;
       const muestreo = await this.crearMuestreo(
         {
           ...data.muestreo,
           idOrigenMuestra: origenMuestra.id_origen_muestra,
           numeroMuestreo,
+          agroclimaSnapshot,
         },
         transaction
       );
@@ -400,6 +501,14 @@ class MonitoreosRepository {
           m.observacion_resultado,
           m.fecha_resultado,
           m.id_usuario_resultado,
+          m.horas_frio_acumuladas,
+          m.dias_grado_acumulados,
+          m.estacion_meteo_uuid,
+          LTRIM(RTRIM(ISNULL(m.nombre_estacion_meteo, ''))) AS nombre_estacion_meteo,
+          m.fecha_corte_agroclima,
+          m.semana_iso_corte,
+          m.temporada_agroclima,
+          m.agroclima_observacion,
           e.id_estructura,
           LTRIM(RTRIM(e.nombre_estructura)) AS nombre_estructura,
           om.id_origen_muestra,
@@ -923,6 +1032,14 @@ class MonitoreosRepository {
           m.numero_muestreo,
           m.fecha_muestreo,
           m.estado_resultado,
+          m.horas_frio_acumuladas,
+          m.dias_grado_acumulados,
+          m.estacion_meteo_uuid,
+          LTRIM(RTRIM(ISNULL(m.nombre_estacion_meteo, ''))) AS nombre_estacion_meteo,
+          m.fecha_corte_agroclima,
+          m.semana_iso_corte,
+          m.temporada_agroclima,
+          m.agroclima_observacion,
           gc.GEN_CUARTEL AS gen_cuartel,
           LTRIM(RTRIM(gc.CODIGO)) AS codigo_cuartel,
           LTRIM(RTRIM(f.Nombre)) AS nombre_fundo,
@@ -972,8 +1089,20 @@ class MonitoreosRepository {
           m.fecha_modificacion,
           m.id_usuario_creacion,
           m.id_usuario_resultado,
-          uc.nombre AS nombre_usuario_creacion,
-          ur.nombre AS nombre_usuario_resultado,
+          m.id_muestrador,
+          m.id_estadofenologico,
+          m.horas_frio_acumuladas,
+          m.dias_grado_acumulados,
+          m.estacion_meteo_uuid,
+          LTRIM(RTRIM(ISNULL(m.nombre_estacion_meteo, ''))) AS nombre_estacion_meteo,
+          m.fecha_corte_agroclima,
+          m.semana_iso_corte,
+          m.temporada_agroclima,
+          m.agroclima_observacion,
+          LTRIM(RTRIM(ISNULL(uc.nombre, ''))) AS nombre_usuario_creacion,
+          LTRIM(RTRIM(ISNULL(ur.nombre, ''))) AS nombre_usuario_resultado,
+          LTRIM(RTRIM(ISNULL(mm.nombre_monitoreador, ''))) AS nombre_muestreador,
+          LTRIM(RTRIM(ISNULL(ef.nom_estadofenologico, ''))) AS nombre_estado_fenologico,
           e.id_estructura,
           LTRIM(RTRIM(e.nombre_estructura)) AS nombre_estructura,
           om.id_origen_muestra,
@@ -1004,6 +1133,10 @@ class MonitoreosRepository {
           ON uc.id = m.id_usuario_creacion
         LEFT JOIN dbo.usuarios_sistema ur
           ON ur.id = m.id_usuario_resultado
+        LEFT JOIN dbo.moni_monitoreadores mm
+          ON mm.id_monitoreador = m.id_muestrador
+        LEFT JOIN dbo.estado_fenologico ef
+          ON ef.id_estadofenologico = m.id_estadofenologico
         WHERE m.id_muestreo = @idMuestreo
       `);
 

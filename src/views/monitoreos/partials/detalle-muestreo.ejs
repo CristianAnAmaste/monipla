@@ -8,7 +8,10 @@
       <p class="eyebrow">Detalle</p>
       <h2>Muestreo <%= detalle.numeroMuestreo %></h2>
     </div>
-    <span class="status <%= detalle.estadoClass %>"><%= detalle.estadoLabel %></span>
+    <div class="detalle-header-actions">
+      <a class="button button-secondary button-small" href="<%= detalle.urlPdf %>">PDF monitoreo</a>
+      <span class="status <%= detalle.estadoClass %>"><%= detalle.estadoLabel %></span>
+    </div>
   </header>
 
   <section class="detalle-contexto" aria-label="Contexto del monitoreo">
@@ -26,10 +29,52 @@
       <span>Recepcion <strong><%= info.fechaRecepcionMuestra %></strong></span>
       <span>Revision <strong><%= info.fechaRevisionMuestra %></strong></span>
     </p>
+    <% if (info.muestreador || info.estadoFenologico) { %>
+      <p class="detalle-contexto-linea">
+        <% if (info.muestreador) { %><span>Muestrador <strong><%= info.muestreador %></strong></span><% } %>
+        <% if (info.estadoFenologico) { %><span>Estado fenologico <strong><%= info.estadoFenologico %></strong></span><% } %>
+      </p>
+    <% } %>
     <% if (info.observacionGeneral) { %>
       <p class="detalle-contexto-nota"><strong>Observacion:</strong> <%= info.observacionGeneral %></p>
     <% } %>
   </section>
+
+  <% if (detalle.agroclima && detalle.agroclima.tieneDatos) { %>
+    <section class="detalle-agroclima-card" aria-label="Informacion agroclimatica">
+      <div class="detalle-section-header">
+        <h3>Agroclima</h3>
+        <% if (detalle.agroclima.estacion) { %>
+          <span class="badge">Estaci&oacute;n: <%= detalle.agroclima.estacion %></span>
+        <% } %>
+      </div>
+
+      <div class="detalle-agroclima-grid">
+        <% if (detalle.agroclima.horasFrio) { %>
+          <p><strong>Horas fr&iacute;o acumuladas:</strong> <%= detalle.agroclima.horasFrio %> horas</p>
+        <% } %>
+        <% if (detalle.agroclima.diasGrado) { %>
+          <p><strong>Grados d&iacute;a acumulados:</strong> <%= detalle.agroclima.diasGrado %> GD</p>
+        <% } %>
+        <% if (detalle.agroclima.mostrarSinEstacion) { %>
+          <p><strong>No hay estaci&oacute;n para el fundo.</strong></p>
+        <% } %>
+        <% if (detalle.agroclima.fechaCorte) { %>
+          <p>Corte agroclim&aacute;tico: <strong><%= detalle.agroclima.fechaCorte %></strong></p>
+        <% } %>
+        <% if (detalle.agroclima.semanaIso) { %>
+          <p>Semana ISO: <strong><%= detalle.agroclima.semanaIso %></strong></p>
+        <% } %>
+        <% if (detalle.agroclima.temporada) { %>
+          <p>Temporada: <strong><%= detalle.agroclima.temporada %></strong></p>
+        <% } %>
+      </div>
+
+      <% if (detalle.agroclima.observacion) { %>
+        <p class="detalle-contexto-nota"><strong>Observaci&oacute;n agroclim&aacute;tica:</strong> <%= detalle.agroclima.observacion %></p>
+      <% } %>
+    </section>
+  <% } %>
 
   <section class="detalle-resultados">
     <div class="detalle-section-header">
