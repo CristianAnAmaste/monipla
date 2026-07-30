@@ -10,17 +10,19 @@ class AgroclimaRepository {
       .query(`
         SELECT TOP 1
           om.id_origen_muestra,
-          gvc.Gen_Fundo AS gen_fundo,
-          gf.Nombre AS nombre_fundo,
+          COALESCE(gvc.Gen_Fundo, mb.gen_fundo) AS gen_fundo,
+          COALESCE(gf.Nombre, mb.fundo) AS nombre_fundo,
           fem.station_id_uuid,
           fem.nombre_estacion
         FROM dbo.MONIPLA_ORIGEN_MUESTRA om
-        INNER JOIN dbo.GEN_VARIEDAD_CAMPO gvc
+        LEFT JOIN dbo.GEN_VARIEDAD_CAMPO gvc
           ON gvc.Gen_Variedad_Campo = om.gen_variedad_campo
-        INNER JOIN dbo.GEN_FUNDO gf
+        LEFT JOIN dbo.GEN_FUNDO gf
           ON gf.Gen_Fundo = gvc.Gen_Fundo
+        LEFT JOIN dbo.MONIPLA_CATALOGO_SDP_MB mb
+          ON mb.id_catalogo_sdp = om.id_catalogo_sdp
         LEFT JOIN dbo.MONIPLA_FUNDO_ESTACION_METEO fem
-          ON fem.gen_fundo = gvc.Gen_Fundo
+          ON fem.gen_fundo = COALESCE(gvc.Gen_Fundo, mb.gen_fundo)
          AND fem.activo = 1
          AND fem.fecha_desde <= @fechaMuestra
          AND (fem.fecha_hasta IS NULL OR fem.fecha_hasta >= @fechaMuestra)

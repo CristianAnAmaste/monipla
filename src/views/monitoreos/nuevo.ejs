@@ -10,7 +10,7 @@
 
 <section class="info-panel">
   <strong>Resolucion automatica en backend</strong>
-  <p>El usuario solo selecciona fundo, campo, variedad y cuartel. El sistema resolvera internamente SDP, CSG y trazabilidad usando la relacion activa del cuartel.</p>
+  <p>El usuario solo selecciona fundo, campo/productor, variedad y cuartel. El sistema resuelve internamente SDP y trazabilidad desde el catalogo de marcha blanca.</p>
 </section>
 
 <% if (success) { %>
@@ -45,7 +45,7 @@
     </div>
 
     <div class="form-group">
-      <label for="genCampo">Campo</label>
+      <label for="genCampo">Campo / Productor</label>
       <select id="genCampo" name="genCampo" data-selected="<%= values.genCampo %>" disabled required>
         <option value="">Seleccione primero un fundo</option>
       </select>
@@ -59,8 +59,8 @@
     </div>
 
     <div class="form-group">
-      <label for="genCuartel">Cuartel</label>
-      <select id="genCuartel" name="genCuartel" data-selected="<%= values.genCuartel %>" disabled required>
+      <label for="idCatalogoSdp">Cuartel</label>
+      <select id="idCatalogoSdp" name="idCatalogoSdp" data-selected="<%= values.idCatalogoSdp %>" disabled required>
         <option value="">Seleccione primero una variedad</option>
       </select>
     </div>
@@ -168,7 +168,7 @@
             <dd data-resumen="fundo">-</dd>
           </div>
           <div>
-            <dt>Campo</dt>
+            <dt>Campo / Productor</dt>
             <dd data-resumen="campo">-</dd>
           </div>
           <div>

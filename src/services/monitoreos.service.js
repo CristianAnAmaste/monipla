@@ -108,10 +108,14 @@ class MonitoreosService {
 
     const payload = {
       origen: {
-        genCuartel: resolucion.origen.gen_cuartel,
-        genVariedadCampo: resolucion.origen.gen_variedad_campo,
-        idRelCuartelSdp: resolucion.origen.id_rel_cuartel_sdp,
+        idCatalogoSdp: resolucion.origen.id_catalogo_sdp,
       },
+      seleccion: {
+        genFundo: resolucion.values.genFundo,
+        genCampo: resolucion.values.genCampo,
+        genVariedad: resolucion.values.genVariedad,
+      },
+      idCatalogoSdp: resolucion.origen.id_catalogo_sdp,
       muestreo: {
         fechaMuestreo: resolucion.values.fechaRevisionMuestra,
         fechaRevisionMuestra: resolucion.values.fechaRevisionMuestra,
@@ -130,7 +134,27 @@ class MonitoreosService {
       ),
     };
 
-    const cabecera = await this.monitoreosRepository.crearCabeceraMonitoreoTransaccional(payload);
+    let cabecera;
+
+    try {
+      cabecera = await this.monitoreosRepository.crearCabeceraMonitoreoTransaccional(payload);
+    } catch (error) {
+      if (
+        [
+          'CATALOGO_SDP_MB_NO_DISPONIBLE',
+          'CATALOGO_SDP_MB_NO_CANONICO',
+          'CATALOGO_SDP_MB_SELECCION_INVALIDA',
+        ].includes(error.message)
+      ) {
+        return {
+          success: false,
+          errors: ['La relacion de marcha blanca ya no esta disponible o no coincide con la ubicacion seleccionada. Actualice el formulario e intente nuevamente.'],
+          values: resolucion.values,
+        };
+      }
+
+      throw error;
+    }
 
     return {
       success: true,
@@ -269,7 +293,7 @@ class MonitoreosService {
         cuartel: cabecera.codigo_cuartel ? `Cuartel ${cabecera.codigo_cuartel}` : '-',
         genCuartel: cabecera.gen_cuartel || '-',
         sdp: cabecera.sdp || '-',
-        csg: cabecera.csg || '-',
+        csg: cabecera.csg || (cabecera.id_catalogo_sdp ? 'No disponible en catalogo de marcha blanca.' : '-'),
         trazabilidad: cabecera.trazabilidad || '-',
         estructura: cabecera.nombre_estructura || '-',
         muestreador: cabecera.nombre_muestreador || '',
@@ -632,7 +656,7 @@ class MonitoreosService {
       errors.push('Debe seleccionar una variedad.');
     }
 
-    if (!values.genCuartel) {
+    if (!values.idCatalogoSdp) {
       errors.push('Debe seleccionar un cuartel.');
     }
 
@@ -691,10 +715,14 @@ class MonitoreosService {
     let origen = null;
 
     if (errors.length === 0) {
-      origen = await this.monitoreosRepository.findResumenByGenCuartel(values.genCuartel);
+      const filasCatalogo = await this.monitoreosRepository.findCatalogoSdpMbById(values.idCatalogoSdp);
 
-      if (!origen) {
-        errors.push('El cuartel seleccionado no tiene una relacion activa para resolver SDP, CSG y trazabilidad.');
+      if (filasCatalogo.length === 0) {
+        errors.push('El cuartel seleccionado no esta disponible en el catalogo de marcha blanca.');
+      } else if (filasCatalogo.length !== 1) {
+        errors.push('El cuartel seleccionado no tiene una resolucion canonica unica en el catalogo de marcha blanca.');
+      } else {
+        [origen] = filasCatalogo;
       }
     }
 
@@ -757,7 +785,7 @@ class MonitoreosService {
       genFundo: '',
       genCampo: '',
       genVariedad: '',
-      genCuartel: '',
+      idCatalogoSdp: '',
       idEstructura: '',
       idMuestreador: '',
       idEstadoFenologico: '',
@@ -802,7 +830,7 @@ class MonitoreosService {
       genFundo: this.normalizarId(data.genFundo),
       genCampo: this.normalizarId(data.genCampo),
       genVariedad: this.normalizarId(data.genVariedad),
-      genCuartel: this.normalizarId(data.genCuartel),
+      idCatalogoSdp: this.normalizarId(data.idCatalogoSdp),
       idEstructura: this.normalizarId(data.idEstructura),
       idMuestreador: this.normalizarId(data.id_muestreador),
       idEstadoFenologico: this.normalizarId(data.id_estadofenologico),
@@ -1423,8 +1451,16 @@ class MonitoreosService {
   }
 
   normalizarId(value) {
-    const parsedValue = Number.parseInt(value, 10);
-    return Number.isInteger(parsedValue) && parsedValue > 0 ? parsedValue : '';
+    const rawValue = String(value || '').trim();
+
+    if (!/^\d+$/.test(rawValue)) {
+      return '';
+    }
+
+    const parsedValue = Number.parseInt(rawValue, 10);
+    return Number.isSafeInteger(parsedValue) && parsedValue > 0 && parsedValue <= 2147483647
+      ? parsedValue
+      : '';
   }
 
   normalizarIdEstricto(value) {
@@ -1474,15 +1510,15 @@ class MonitoreosService {
   buildResumen(values, origen, estructura) {
     return {
       ubicacion: {
-        fundo: origen.nombre_fundo,
-        campo: origen.nombre_campo,
-        variedad: origen.nombre_variedad,
-        cuartel: origen.codigo_cuartel,
+        fundo: origen.fundo,
+        campo: origen.nombre_productor,
+        variedad: origen.variedad,
+        cuartel: origen.cuartel,
       },
       resolucion: {
         sdp: origen.sdp,
-        csg: origen.csg,
-        trazabilidad: origen.trazabilidad,
+        csg: origen.codigo_sag || 'No disponible en catalogo de marcha blanca.',
+        trazabilidad: origen.codigo_trazabilidad,
       },
       estructura: estructura.nombre_estructura,
       fechas: {

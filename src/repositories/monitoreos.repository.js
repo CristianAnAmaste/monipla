@@ -6,22 +6,13 @@ class MonitoreosRepository {
 
     const result = await pool.request().query(`
       SELECT
-        q.value,
-        q.label
-      FROM (
-        SELECT DISTINCT
-          f.Gen_Fundo AS value,
-          LTRIM(RTRIM(f.Nombre)) AS label
-        FROM dbo.GEN_CUARTEL gc
-        INNER JOIN dbo.MONIPLA_REL_CUARTEL_SDP rel
-          ON rel.gen_cuartel = gc.GEN_CUARTEL
-         AND rel.activo = 1
-        INNER JOIN dbo.GEN_FUNDO f
-          ON f.Gen_Fundo = gc.GEN_FUNDO
-        WHERE gc.estado = 1
-          AND f.estado = 1
-      ) q
-      ORDER BY q.label ASC
+        gen_fundo AS value,
+        fundo AS label
+      FROM dbo.MONIPLA_CATALOGO_SDP_MB
+      WHERE activo = 1
+        AND sdp IS NOT NULL
+      GROUP BY gen_fundo, fundo
+      ORDER BY fundo ASC
     `);
 
     return result.recordset;
@@ -35,23 +26,14 @@ class MonitoreosRepository {
       .input('genFundo', sql.Int, genFundo)
       .query(`
         SELECT
-          q.value,
-          q.label
-        FROM (
-          SELECT DISTINCT
-            c.Gen_Campo AS value,
-            LTRIM(RTRIM(c.Nombre)) AS label
-          FROM dbo.GEN_CUARTEL gc
-          INNER JOIN dbo.MONIPLA_REL_CUARTEL_SDP rel
-            ON rel.gen_cuartel = gc.GEN_CUARTEL
-           AND rel.activo = 1
-          INNER JOIN dbo.GEN_CAMPO c
-            ON c.Gen_Campo = gc.GEN_CAMPO
-          WHERE gc.estado = 1
-            AND c.estado = 1
-            AND gc.GEN_FUNDO = @genFundo
-        ) q
-        ORDER BY q.label ASC
+          gen_campo AS value,
+          nombre_productor AS label
+        FROM dbo.MONIPLA_CATALOGO_SDP_MB
+        WHERE activo = 1
+          AND sdp IS NOT NULL
+          AND gen_fundo = @genFundo
+        GROUP BY gen_campo, nombre_productor
+        ORDER BY nombre_productor ASC
       `);
 
     return result.recordset;
@@ -66,24 +48,15 @@ class MonitoreosRepository {
       .input('genCampo', sql.Int, genCampo)
       .query(`
         SELECT
-          q.value,
-          q.label
-        FROM (
-          SELECT DISTINCT
-            v.gen_variedad AS value,
-            LTRIM(RTRIM(v.Nombre)) AS label
-          FROM dbo.GEN_CUARTEL gc
-          INNER JOIN dbo.MONIPLA_REL_CUARTEL_SDP rel
-            ON rel.gen_cuartel = gc.GEN_CUARTEL
-           AND rel.activo = 1
-          INNER JOIN dbo.GEN_VARIEDAD v
-            ON v.gen_variedad = gc.GEN_VARIEDAD
-          WHERE gc.estado = 1
-            AND v.Estado = 1
-            AND gc.GEN_FUNDO = @genFundo
-            AND gc.GEN_CAMPO = @genCampo
-        ) q
-        ORDER BY q.label ASC
+          gen_variedad AS value,
+          variedad AS label
+        FROM dbo.MONIPLA_CATALOGO_SDP_MB
+        WHERE activo = 1
+          AND sdp IS NOT NULL
+          AND gen_fundo = @genFundo
+          AND gen_campo = @genCampo
+        GROUP BY gen_variedad, variedad
+        ORDER BY variedad ASC
       `);
 
     return result.recordset;
@@ -99,27 +72,18 @@ class MonitoreosRepository {
       .input('genVariedad', sql.Int, genVariedad)
       .query(`
         SELECT
-          q.value,
-          q.codigo,
-          q.label
-        FROM (
-          SELECT
-            gc.GEN_CUARTEL AS value,
-            LTRIM(RTRIM(gc.CODIGO)) AS codigo,
-            CONCAT('Cuartel ', LTRIM(RTRIM(gc.CODIGO))) AS label,
-            TRY_CONVERT(INT, gc.CODIGO) AS orden_numerico
-          FROM dbo.GEN_CUARTEL gc
-          INNER JOIN dbo.MONIPLA_REL_CUARTEL_SDP rel
-            ON rel.gen_cuartel = gc.GEN_CUARTEL
-           AND rel.activo = 1
-          WHERE gc.estado = 1
-            AND gc.GEN_FUNDO = @genFundo
-            AND gc.GEN_CAMPO = @genCampo
-            AND gc.GEN_VARIEDAD = @genVariedad
-        ) q
+          id_catalogo_sdp AS value,
+          cuartel AS label
+        FROM dbo.MONIPLA_CATALOGO_SDP_MB
+        WHERE activo = 1
+          AND sdp IS NOT NULL
+          AND gen_fundo = @genFundo
+          AND gen_campo = @genCampo
+          AND gen_variedad = @genVariedad
         ORDER BY
-          q.orden_numerico,
-          q.codigo
+          CASE WHEN TRY_CONVERT(INT, cuartel) IS NULL THEN 1 ELSE 0 END,
+          TRY_CONVERT(INT, cuartel),
+          cuartel
       `);
 
     return result.recordset;
@@ -160,11 +124,11 @@ class MonitoreosRepository {
 
     const result = await pool.request().query(`
       SELECT
-        id_monitoreador AS value,
-        LTRIM(RTRIM(nombre_monitoreador)) AS label
-      FROM dbo.moni_monitoreadores
+        id_muestrador AS value,
+        LTRIM(RTRIM(nombre_muestrador)) AS label
+      FROM dbo.MONIPLA_MUESTRADOR
       WHERE activo = 1
-      ORDER BY nombre_monitoreador ASC
+      ORDER BY nombre_muestrador ASC
     `);
 
     return result.recordset;
@@ -214,103 +178,54 @@ class MonitoreosRepository {
       .input('idMuestreador', sql.Int, idMuestreador)
       .query(`
         SELECT TOP 1
-          id_monitoreador,
-          nombre_monitoreador,
+          id_muestrador,
+          nombre_muestrador,
           activo
-        FROM dbo.moni_monitoreadores
-        WHERE id_monitoreador = @idMuestreador
+        FROM dbo.MONIPLA_MUESTRADOR
+        WHERE id_muestrador = @idMuestreador
       `);
 
     return result.recordset[0] || null;
   }
 
-  async findOrigenByGenCuartel(genCuartel) {
-    const pool = await poolPromise;
+  async findCatalogoSdpMbById(idCatalogoSdp, transaction = null) {
+    const request = await this.createRequest(transaction);
 
-    const result = await pool
-      .request()
-      .input('genCuartel', sql.Int, genCuartel)
+    const result = await request
+      .input('idCatalogoSdp', sql.Int, idCatalogoSdp)
       .query(`
-        SELECT TOP 1
-          gc.GEN_CUARTEL AS gen_cuartel,
-          gc.GEN_FUNDO AS gen_fundo,
-          gc.GEN_CAMPO AS gen_campo,
-          gc.GEN_VARIEDAD AS gen_variedad,
-          gc.GEN_VARIEDAD_CAMPO AS gen_variedad_campo,
-          gc.CODIGO AS codigo_cuartel,
-          rel.id_rel_cuartel_sdp,
-          rel.trazabilidad,
-          rel.sdp,
-          rel.csg
-        FROM dbo.GEN_CUARTEL gc
-        INNER JOIN dbo.MONIPLA_REL_CUARTEL_SDP rel
-          ON rel.gen_cuartel = gc.GEN_CUARTEL
-         AND rel.activo = 1
-        WHERE gc.estado = 1
-          AND gc.GEN_CUARTEL = @genCuartel
+        SELECT
+          id_catalogo_sdp,
+          gen_fundo,
+          fundo,
+          gen_campo,
+          codigo_productor,
+          nombre_productor,
+          gen_variedad,
+          variedad,
+          cuartel,
+          sdp,
+          codigo_sag,
+          codigo_trazabilidad
+        FROM dbo.MONIPLA_CATALOGO_SDP_MB
+        WHERE id_catalogo_sdp = @idCatalogoSdp
+          AND activo = 1
+          AND sdp IS NOT NULL
       `);
 
-    return result.recordset[0] || null;
-  }
-
-  async findResumenByGenCuartel(genCuartel) {
-    const pool = await poolPromise;
-
-    const result = await pool
-      .request()
-      .input('genCuartel', sql.Int, genCuartel)
-      .query(`
-        SELECT TOP 1
-          gc.GEN_CUARTEL AS gen_cuartel,
-          gc.GEN_FUNDO AS gen_fundo,
-          gc.GEN_CAMPO AS gen_campo,
-          gc.GEN_VARIEDAD AS gen_variedad,
-          gc.GEN_VARIEDAD_CAMPO AS gen_variedad_campo,
-          LTRIM(RTRIM(gc.CODIGO)) AS codigo_cuartel,
-          LTRIM(RTRIM(f.Nombre)) AS nombre_fundo,
-          LTRIM(RTRIM(c.Nombre)) AS nombre_campo,
-          LTRIM(RTRIM(v.Nombre)) AS nombre_variedad,
-          rel.id_rel_cuartel_sdp,
-          rel.trazabilidad,
-          rel.sdp,
-          rel.csg
-        FROM dbo.GEN_CUARTEL gc
-        INNER JOIN dbo.MONIPLA_REL_CUARTEL_SDP rel
-          ON rel.gen_cuartel = gc.GEN_CUARTEL
-         AND rel.activo = 1
-        INNER JOIN dbo.GEN_FUNDO f
-          ON f.Gen_Fundo = gc.GEN_FUNDO
-        INNER JOIN dbo.GEN_CAMPO c
-          ON c.Gen_Campo = gc.GEN_CAMPO
-        INNER JOIN dbo.GEN_VARIEDAD v
-          ON v.gen_variedad = gc.GEN_VARIEDAD
-        WHERE gc.estado = 1
-          AND gc.GEN_CUARTEL = @genCuartel
-      `);
-
-    return result.recordset[0] || null;
+    return result.recordset;
   }
 
   async buscarOrigenMuestra(origen, transaction = null) {
     const request = await this.createRequest(transaction);
 
     const result = await request
-      .input('genCuartel', sql.SmallInt, origen.genCuartel)
-      .input('genVariedadCampo', sql.SmallInt, origen.genVariedadCampo || null)
-      .input('idRelCuartelSdp', sql.Int, origen.idRelCuartelSdp || null)
+      .input('idCatalogoSdp', sql.Int, origen.idCatalogoSdp)
       .query(`
         SELECT TOP 1
           id_origen_muestra
         FROM dbo.MONIPLA_ORIGEN_MUESTRA WITH (UPDLOCK, HOLDLOCK)
-        WHERE gen_cuartel = @genCuartel
-          AND (
-            gen_variedad_campo = @genVariedadCampo
-            OR (gen_variedad_campo IS NULL AND @genVariedadCampo IS NULL)
-          )
-          AND (
-            id_rel_cuartel_sdp = @idRelCuartelSdp
-            OR (id_rel_cuartel_sdp IS NULL AND @idRelCuartelSdp IS NULL)
-          )
+        WHERE id_catalogo_sdp = @idCatalogoSdp
       `);
 
     return result.recordset[0] || null;
@@ -320,22 +235,22 @@ class MonitoreosRepository {
     const request = await this.createRequest(transaction);
 
     const result = await request
-      .input('genCuartel', sql.SmallInt, origen.genCuartel)
-      .input('genVariedadCampo', sql.SmallInt, origen.genVariedadCampo || null)
-      .input('idRelCuartelSdp', sql.Int, origen.idRelCuartelSdp || null)
+      .input('idCatalogoSdp', sql.Int, origen.idCatalogoSdp)
       .query(`
         INSERT INTO dbo.MONIPLA_ORIGEN_MUESTRA (
           gen_cuartel,
           gen_variedad_campo,
           id_rel_cuartel_sdp,
+          id_catalogo_sdp,
           activo,
           fecha_creacion
         )
         OUTPUT INSERTED.id_origen_muestra
         VALUES (
-          @genCuartel,
-          @genVariedadCampo,
-          @idRelCuartelSdp,
+          NULL,
+          NULL,
+          NULL,
+          @idCatalogoSdp,
           1,
           SYSDATETIME()
         )
@@ -448,6 +363,25 @@ class MonitoreosRepository {
       await transaction.begin();
       transactionStarted = true;
 
+      const catalogos = await this.findCatalogoSdpMbById(data.idCatalogoSdp, transaction);
+
+      if (catalogos.length === 0) {
+        throw new Error('CATALOGO_SDP_MB_NO_DISPONIBLE');
+      }
+
+      if (catalogos.length !== 1) {
+        throw new Error('CATALOGO_SDP_MB_NO_CANONICO');
+      }
+
+      const catalogo = catalogos[0];
+      const seleccionInconsistente = Number(catalogo.gen_fundo) !== data.seleccion.genFundo
+        || Number(catalogo.gen_campo) !== data.seleccion.genCampo
+        || Number(catalogo.gen_variedad) !== data.seleccion.genVariedad;
+
+      if (seleccionInconsistente) {
+        throw new Error('CATALOGO_SDP_MB_SELECCION_INVALIDA');
+      }
+
       let origenMuestra = await this.buscarOrigenMuestra(data.origen, transaction);
 
       if (!origenMuestra) {
@@ -512,25 +446,28 @@ class MonitoreosRepository {
           e.id_estructura,
           LTRIM(RTRIM(e.nombre_estructura)) AS nombre_estructura,
           om.id_origen_muestra,
+          om.id_catalogo_sdp,
           gc.GEN_CUARTEL AS gen_cuartel,
-          LTRIM(RTRIM(gc.CODIGO)) AS codigo_cuartel,
-          LTRIM(RTRIM(f.Nombre)) AS nombre_fundo,
-          LTRIM(RTRIM(c.Nombre)) AS nombre_campo,
-          LTRIM(RTRIM(v.Nombre)) AS nombre_variedad,
-          rel.sdp,
-          rel.csg,
-          rel.trazabilidad
+          COALESCE(LTRIM(RTRIM(gc.CODIGO)), LTRIM(RTRIM(mb.cuartel))) AS codigo_cuartel,
+          COALESCE(LTRIM(RTRIM(f.Nombre)), LTRIM(RTRIM(mb.fundo))) AS nombre_fundo,
+          COALESCE(LTRIM(RTRIM(c.Nombre)), LTRIM(RTRIM(mb.nombre_productor))) AS nombre_campo,
+          COALESCE(LTRIM(RTRIM(v.Nombre)), LTRIM(RTRIM(mb.variedad))) AS nombre_variedad,
+          COALESCE(rel.sdp, mb.sdp) AS sdp,
+          COALESCE(rel.csg, mb.codigo_sag) AS csg,
+          COALESCE(rel.trazabilidad, mb.codigo_trazabilidad) AS trazabilidad
         FROM dbo.MONIPLA_MUESTREO m
         INNER JOIN dbo.MONIPLA_ORIGEN_MUESTRA om
           ON om.id_origen_muestra = m.id_origen_muestra
-        INNER JOIN dbo.GEN_CUARTEL gc
+        LEFT JOIN dbo.GEN_CUARTEL gc
           ON gc.GEN_CUARTEL = om.gen_cuartel
-        INNER JOIN dbo.GEN_FUNDO f
+        LEFT JOIN dbo.GEN_FUNDO f
           ON f.Gen_Fundo = gc.GEN_FUNDO
-        INNER JOIN dbo.GEN_CAMPO c
+        LEFT JOIN dbo.GEN_CAMPO c
           ON c.Gen_Campo = gc.GEN_CAMPO
-        INNER JOIN dbo.GEN_VARIEDAD v
+        LEFT JOIN dbo.GEN_VARIEDAD v
           ON v.gen_variedad = gc.GEN_VARIEDAD
+        LEFT JOIN dbo.MONIPLA_CATALOGO_SDP_MB mb
+          ON mb.id_catalogo_sdp = om.id_catalogo_sdp
         INNER JOIN dbo.MONIPLA_ESTRUCTURA e
           ON e.id_estructura = m.id_estructura
         LEFT JOIN dbo.MONIPLA_REL_CUARTEL_SDP rel
@@ -827,15 +764,18 @@ class MonitoreosRepository {
           q.label
         FROM (
           SELECT DISTINCT
-            f.Gen_Fundo AS value,
-            LTRIM(RTRIM(f.Nombre)) AS label
+            COALESCE(gc.GEN_FUNDO, mb.gen_fundo) AS value,
+            COALESCE(LTRIM(RTRIM(f.Nombre)), LTRIM(RTRIM(mb.fundo))) AS label
           FROM dbo.MONIPLA_MUESTREO m
           INNER JOIN dbo.MONIPLA_ORIGEN_MUESTRA om
             ON om.id_origen_muestra = m.id_origen_muestra
-          INNER JOIN dbo.GEN_CUARTEL gc
+          LEFT JOIN dbo.GEN_CUARTEL gc
             ON gc.GEN_CUARTEL = om.gen_cuartel
-          INNER JOIN dbo.GEN_FUNDO f
+          LEFT JOIN dbo.GEN_FUNDO f
             ON f.Gen_Fundo = gc.GEN_FUNDO
+          LEFT JOIN dbo.MONIPLA_CATALOGO_SDP_MB mb
+            ON mb.id_catalogo_sdp = om.id_catalogo_sdp
+          WHERE COALESCE(gc.GEN_FUNDO, mb.gen_fundo) IS NOT NULL
         ) q
         ORDER BY q.label ASC
       `),
@@ -845,15 +785,18 @@ class MonitoreosRepository {
           q.label
         FROM (
           SELECT DISTINCT
-            c.Gen_Campo AS value,
-            LTRIM(RTRIM(c.Nombre)) AS label
+            COALESCE(gc.GEN_CAMPO, mb.gen_campo) AS value,
+            COALESCE(LTRIM(RTRIM(c.Nombre)), LTRIM(RTRIM(mb.nombre_productor))) AS label
           FROM dbo.MONIPLA_MUESTREO m
           INNER JOIN dbo.MONIPLA_ORIGEN_MUESTRA om
             ON om.id_origen_muestra = m.id_origen_muestra
-          INNER JOIN dbo.GEN_CUARTEL gc
+          LEFT JOIN dbo.GEN_CUARTEL gc
             ON gc.GEN_CUARTEL = om.gen_cuartel
-          INNER JOIN dbo.GEN_CAMPO c
+          LEFT JOIN dbo.GEN_CAMPO c
             ON c.Gen_Campo = gc.GEN_CAMPO
+          LEFT JOIN dbo.MONIPLA_CATALOGO_SDP_MB mb
+            ON mb.id_catalogo_sdp = om.id_catalogo_sdp
+          WHERE COALESCE(gc.GEN_CAMPO, mb.gen_campo) IS NOT NULL
         ) q
         ORDER BY q.label ASC
       `),
@@ -863,15 +806,18 @@ class MonitoreosRepository {
           q.label
         FROM (
           SELECT DISTINCT
-            v.gen_variedad AS value,
-            LTRIM(RTRIM(v.Nombre)) AS label
+            COALESCE(gc.GEN_VARIEDAD, mb.gen_variedad) AS value,
+            COALESCE(LTRIM(RTRIM(v.Nombre)), LTRIM(RTRIM(mb.variedad))) AS label
           FROM dbo.MONIPLA_MUESTREO m
           INNER JOIN dbo.MONIPLA_ORIGEN_MUESTRA om
             ON om.id_origen_muestra = m.id_origen_muestra
-          INNER JOIN dbo.GEN_CUARTEL gc
+          LEFT JOIN dbo.GEN_CUARTEL gc
             ON gc.GEN_CUARTEL = om.gen_cuartel
-          INNER JOIN dbo.GEN_VARIEDAD v
+          LEFT JOIN dbo.GEN_VARIEDAD v
             ON v.gen_variedad = gc.GEN_VARIEDAD
+          LEFT JOIN dbo.MONIPLA_CATALOGO_SDP_MB mb
+            ON mb.id_catalogo_sdp = om.id_catalogo_sdp
+          WHERE COALESCE(gc.GEN_VARIEDAD, mb.gen_variedad) IS NOT NULL
         ) q
         ORDER BY q.label ASC
       `),
@@ -882,15 +828,18 @@ class MonitoreosRepository {
           q.label
         FROM (
           SELECT DISTINCT
-            gc.GEN_CUARTEL AS value,
-            LTRIM(RTRIM(gc.CODIGO)) AS codigo,
-            CONCAT('Cuartel ', LTRIM(RTRIM(gc.CODIGO))) AS label,
-            TRY_CONVERT(INT, gc.CODIGO) AS orden_numerico
+            COALESCE(gc.GEN_CUARTEL, mb.id_catalogo_sdp) AS value,
+            COALESCE(LTRIM(RTRIM(gc.CODIGO)), LTRIM(RTRIM(mb.cuartel))) AS codigo,
+            CONCAT('Cuartel ', COALESCE(LTRIM(RTRIM(gc.CODIGO)), LTRIM(RTRIM(mb.cuartel)))) AS label,
+            TRY_CONVERT(INT, COALESCE(LTRIM(RTRIM(gc.CODIGO)), LTRIM(RTRIM(mb.cuartel)))) AS orden_numerico
           FROM dbo.MONIPLA_MUESTREO m
           INNER JOIN dbo.MONIPLA_ORIGEN_MUESTRA om
             ON om.id_origen_muestra = m.id_origen_muestra
-          INNER JOIN dbo.GEN_CUARTEL gc
+          LEFT JOIN dbo.GEN_CUARTEL gc
             ON gc.GEN_CUARTEL = om.gen_cuartel
+          LEFT JOIN dbo.MONIPLA_CATALOGO_SDP_MB mb
+            ON mb.id_catalogo_sdp = om.id_catalogo_sdp
+          WHERE COALESCE(gc.GEN_CUARTEL, mb.id_catalogo_sdp) IS NOT NULL
         ) q
         ORDER BY q.orden_numerico, q.codigo
       `),
@@ -959,14 +908,16 @@ class MonitoreosRepository {
       FROM dbo.MONIPLA_MUESTREO m
       INNER JOIN dbo.MONIPLA_ORIGEN_MUESTRA om
         ON om.id_origen_muestra = m.id_origen_muestra
-      INNER JOIN dbo.GEN_CUARTEL gc
+      LEFT JOIN dbo.GEN_CUARTEL gc
         ON gc.GEN_CUARTEL = om.gen_cuartel
-      INNER JOIN dbo.GEN_FUNDO f
+      LEFT JOIN dbo.GEN_FUNDO f
         ON f.Gen_Fundo = gc.GEN_FUNDO
-      INNER JOIN dbo.GEN_CAMPO c
+      LEFT JOIN dbo.GEN_CAMPO c
         ON c.Gen_Campo = gc.GEN_CAMPO
-      INNER JOIN dbo.GEN_VARIEDAD v
+      LEFT JOIN dbo.GEN_VARIEDAD v
         ON v.gen_variedad = gc.GEN_VARIEDAD
+      LEFT JOIN dbo.MONIPLA_CATALOGO_SDP_MB mb
+        ON mb.id_catalogo_sdp = om.id_catalogo_sdp
       INNER JOIN dbo.MONIPLA_ESTRUCTURA e
         ON e.id_estructura = m.id_estructura
       OUTER APPLY (
@@ -983,10 +934,10 @@ class MonitoreosRepository {
         FROM dbo.MONIPLA_IMAGEN img
         WHERE img.id_muestreo = m.id_muestreo
       ) imagenes
-      WHERE (@idFundo IS NULL OR gc.GEN_FUNDO = @idFundo)
-        AND (@idCampo IS NULL OR gc.GEN_CAMPO = @idCampo)
-        AND (@idVariedad IS NULL OR gc.GEN_VARIEDAD = @idVariedad)
-        AND (@idCuartel IS NULL OR gc.GEN_CUARTEL = @idCuartel)
+      WHERE (@idFundo IS NULL OR COALESCE(gc.GEN_FUNDO, mb.gen_fundo) = @idFundo)
+        AND (@idCampo IS NULL OR COALESCE(gc.GEN_CAMPO, mb.gen_campo) = @idCampo)
+        AND (@idVariedad IS NULL OR COALESCE(gc.GEN_VARIEDAD, mb.gen_variedad) = @idVariedad)
+        AND (@idCuartel IS NULL OR COALESCE(gc.GEN_CUARTEL, mb.id_catalogo_sdp) = @idCuartel)
         AND (@fechaDesde IS NULL OR m.fecha_muestreo >= @fechaDesde)
         AND (@fechaHasta IS NULL OR m.fecha_muestreo <= @fechaHasta)
         AND (@idEstructura IS NULL OR m.id_estructura = @idEstructura)
@@ -1041,10 +992,10 @@ class MonitoreosRepository {
           m.temporada_agroclima,
           m.agroclima_observacion,
           gc.GEN_CUARTEL AS gen_cuartel,
-          LTRIM(RTRIM(gc.CODIGO)) AS codigo_cuartel,
-          LTRIM(RTRIM(f.Nombre)) AS nombre_fundo,
-          LTRIM(RTRIM(c.Nombre)) AS nombre_campo,
-          LTRIM(RTRIM(v.Nombre)) AS nombre_variedad,
+          COALESCE(LTRIM(RTRIM(gc.CODIGO)), LTRIM(RTRIM(mb.cuartel))) AS codigo_cuartel,
+          COALESCE(LTRIM(RTRIM(f.Nombre)), LTRIM(RTRIM(mb.fundo))) AS nombre_fundo,
+          COALESCE(LTRIM(RTRIM(c.Nombre)), LTRIM(RTRIM(mb.nombre_productor))) AS nombre_campo,
+          COALESCE(LTRIM(RTRIM(v.Nombre)), LTRIM(RTRIM(mb.variedad))) AS nombre_variedad,
           LTRIM(RTRIM(e.nombre_estructura)) AS nombre_estructura,
           ISNULL(resultados.plagas_detectadas, 0) AS plagas_detectadas,
           ISNULL(resultados.total_ejemplares, 0) AS total_ejemplares,
@@ -1101,30 +1052,33 @@ class MonitoreosRepository {
           m.agroclima_observacion,
           LTRIM(RTRIM(ISNULL(uc.nombre, ''))) AS nombre_usuario_creacion,
           LTRIM(RTRIM(ISNULL(ur.nombre, ''))) AS nombre_usuario_resultado,
-          LTRIM(RTRIM(ISNULL(mm.nombre_monitoreador, ''))) AS nombre_muestreador,
+          LTRIM(RTRIM(ISNULL(mm.nombre_muestrador, ''))) AS nombre_muestreador,
           LTRIM(RTRIM(ISNULL(ef.nom_estadofenologico, ''))) AS nombre_estado_fenologico,
           e.id_estructura,
           LTRIM(RTRIM(e.nombre_estructura)) AS nombre_estructura,
           om.id_origen_muestra,
+          om.id_catalogo_sdp,
           gc.GEN_CUARTEL AS gen_cuartel,
-          LTRIM(RTRIM(gc.CODIGO)) AS codigo_cuartel,
-          LTRIM(RTRIM(f.Nombre)) AS nombre_fundo,
-          LTRIM(RTRIM(c.Nombre)) AS nombre_campo,
-          LTRIM(RTRIM(v.Nombre)) AS nombre_variedad,
-          rel.sdp,
-          rel.csg,
-          rel.trazabilidad
+          COALESCE(LTRIM(RTRIM(gc.CODIGO)), LTRIM(RTRIM(mb.cuartel))) AS codigo_cuartel,
+          COALESCE(LTRIM(RTRIM(f.Nombre)), LTRIM(RTRIM(mb.fundo))) AS nombre_fundo,
+          COALESCE(LTRIM(RTRIM(c.Nombre)), LTRIM(RTRIM(mb.nombre_productor))) AS nombre_campo,
+          COALESCE(LTRIM(RTRIM(v.Nombre)), LTRIM(RTRIM(mb.variedad))) AS nombre_variedad,
+          COALESCE(rel.sdp, mb.sdp) AS sdp,
+          COALESCE(rel.csg, mb.codigo_sag) AS csg,
+          COALESCE(rel.trazabilidad, mb.codigo_trazabilidad) AS trazabilidad
         FROM dbo.MONIPLA_MUESTREO m
         INNER JOIN dbo.MONIPLA_ORIGEN_MUESTRA om
           ON om.id_origen_muestra = m.id_origen_muestra
-        INNER JOIN dbo.GEN_CUARTEL gc
+        LEFT JOIN dbo.GEN_CUARTEL gc
           ON gc.GEN_CUARTEL = om.gen_cuartel
-        INNER JOIN dbo.GEN_FUNDO f
+        LEFT JOIN dbo.GEN_FUNDO f
           ON f.Gen_Fundo = gc.GEN_FUNDO
-        INNER JOIN dbo.GEN_CAMPO c
+        LEFT JOIN dbo.GEN_CAMPO c
           ON c.Gen_Campo = gc.GEN_CAMPO
-        INNER JOIN dbo.GEN_VARIEDAD v
+        LEFT JOIN dbo.GEN_VARIEDAD v
           ON v.gen_variedad = gc.GEN_VARIEDAD
+        LEFT JOIN dbo.MONIPLA_CATALOGO_SDP_MB mb
+          ON mb.id_catalogo_sdp = om.id_catalogo_sdp
         INNER JOIN dbo.MONIPLA_ESTRUCTURA e
           ON e.id_estructura = m.id_estructura
         LEFT JOIN dbo.MONIPLA_REL_CUARTEL_SDP rel
@@ -1133,8 +1087,8 @@ class MonitoreosRepository {
           ON uc.id = m.id_usuario_creacion
         LEFT JOIN dbo.usuarios_sistema ur
           ON ur.id = m.id_usuario_resultado
-        LEFT JOIN dbo.moni_monitoreadores mm
-          ON mm.id_monitoreador = m.id_muestrador
+        LEFT JOIN dbo.MONIPLA_MUESTRADOR mm
+          ON mm.id_muestrador = m.id_muestrador
         LEFT JOIN dbo.estado_fenologico ef
           ON ef.id_estadofenologico = m.id_estadofenologico
         WHERE m.id_muestreo = @idMuestreo
