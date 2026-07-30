@@ -918,6 +918,8 @@ class MonitoreosRepository {
         ON v.gen_variedad = gc.GEN_VARIEDAD
       LEFT JOIN dbo.MONIPLA_CATALOGO_SDP_MB mb
         ON mb.id_catalogo_sdp = om.id_catalogo_sdp
+      LEFT JOIN dbo.MONIPLA_REL_CUARTEL_SDP rel
+        ON rel.id_rel_cuartel_sdp = om.id_rel_cuartel_sdp
       INNER JOIN dbo.MONIPLA_ESTRUCTURA e
         ON e.id_estructura = m.id_estructura
       OUTER APPLY (
@@ -996,6 +998,7 @@ class MonitoreosRepository {
           COALESCE(LTRIM(RTRIM(f.Nombre)), LTRIM(RTRIM(mb.fundo))) AS nombre_fundo,
           COALESCE(LTRIM(RTRIM(c.Nombre)), LTRIM(RTRIM(mb.nombre_productor))) AS nombre_campo,
           COALESCE(LTRIM(RTRIM(v.Nombre)), LTRIM(RTRIM(mb.variedad))) AS nombre_variedad,
+          COALESCE(rel.sdp, mb.sdp) AS sdp,
           LTRIM(RTRIM(e.nombre_estructura)) AS nombre_estructura,
           ISNULL(resultados.plagas_detectadas, 0) AS plagas_detectadas,
           ISNULL(resultados.total_ejemplares, 0) AS total_ejemplares,
@@ -1180,6 +1183,124 @@ class MonitoreosRepository {
       `);
 
     return result.recordset[0] || null;
+  }
+
+  async bloquearMuestreoParaEliminacion(idMuestreo, transaction) {
+    const request = await this.createRequest(transaction);
+    const result = await request
+      .input('idMuestreo', sql.Int, idMuestreo)
+      .query(`
+        SELECT
+          id_muestreo,
+          numero_muestreo,
+          id_origen_muestra,
+          estado_resultado
+        FROM dbo.MONIPLA_MUESTREO WITH (UPDLOCK, HOLDLOCK)
+        WHERE id_muestreo = @idMuestreo
+      `);
+
+    return result.recordset.length === 1 ? result.recordset[0] : null;
+  }
+
+  async eliminarConteosPorMuestreo(idMuestreo, transaction) {
+    const request = await this.createRequest(transaction);
+    const result = await request
+      .input('idMuestreo', sql.Int, idMuestreo)
+      .query(`
+        DELETE rc
+        FROM dbo.MONIPLA_RESULTADO_CONTEO rc
+        INNER JOIN dbo.MONIPLA_RESULTADO_PLAGA rp
+          ON rp.id_resultado_plaga = rc.id_resultado_plaga
+        WHERE rp.id_muestreo = @idMuestreo
+      `);
+
+    return Number(result.rowsAffected[0] || 0);
+  }
+
+  async eliminarResultadosPlagaPorMuestreo(idMuestreo, transaction) {
+    const request = await this.createRequest(transaction);
+    const result = await request
+      .input('idMuestreo', sql.Int, idMuestreo)
+      .query(`
+        DELETE FROM dbo.MONIPLA_RESULTADO_PLAGA
+        WHERE id_muestreo = @idMuestreo
+      `);
+
+    return Number(result.rowsAffected[0] || 0);
+  }
+
+  async eliminarImagenesPorMuestreo(idMuestreo, transaction) {
+    const request = await this.createRequest(transaction);
+    const result = await request
+      .input('idMuestreo', sql.Int, idMuestreo)
+      .query(`
+        DELETE FROM dbo.MONIPLA_IMAGEN
+        WHERE id_muestreo = @idMuestreo
+      `);
+
+    return Number(result.rowsAffected[0] || 0);
+  }
+
+  async eliminarMuestreoPorId(idMuestreo, transaction) {
+    const request = await this.createRequest(transaction);
+    const result = await request
+      .input('idMuestreo', sql.Int, idMuestreo)
+      .query(`
+        DELETE FROM dbo.MONIPLA_MUESTREO
+        WHERE id_muestreo = @idMuestreo
+      `);
+
+    return Number(result.rowsAffected[0] || 0);
+  }
+
+  async eliminarMuestreoTransaccional(idMuestreo) {
+    const pool = await poolPromise;
+    const transaction = new sql.Transaction(pool);
+    let transactionStarted = false;
+
+    try {
+      console.info('[MONIPLA][ELIMINAR][TX_BEGIN]', { idMuestreo });
+      await transaction.begin();
+      transactionStarted = true;
+
+      const muestreo = await this.bloquearMuestreoParaEliminacion(idMuestreo, transaction);
+
+      if (!muestreo) {
+        throw new Error('MUESTREO_NO_EXISTE');
+      }
+
+      const conteosEliminados = await this.eliminarConteosPorMuestreo(idMuestreo, transaction);
+      const resultadosEliminados = await this.eliminarResultadosPlagaPorMuestreo(idMuestreo, transaction);
+      const imagenesEliminadas = await this.eliminarImagenesPorMuestreo(idMuestreo, transaction);
+      const muestreosEliminados = await this.eliminarMuestreoPorId(idMuestreo, transaction);
+
+      if (muestreosEliminados !== 1) {
+        throw new Error('ELIMINACION_MUESTREO_INCONSISTENTE');
+      }
+
+      await transaction.commit();
+
+      console.info('[MONIPLA][ELIMINAR][TX_COMMIT]', {
+        idMuestreo,
+        numeroMuestreo: muestreo.numero_muestreo,
+        conteosEliminados,
+        resultadosEliminados,
+        imagenesEliminadas,
+      });
+
+      return muestreo;
+    } catch (error) {
+      if (transactionStarted) {
+        await transaction.rollback();
+      }
+
+      console.error('[MONIPLA][ELIMINAR][TX_ROLLBACK]', {
+        idMuestreo,
+        error: error.message,
+      });
+
+      throw error;
+    }
   }
 
   async guardarResultadosMuestreoTransaccional(idMuestreo, plagas, metadata) {

@@ -5,6 +5,20 @@
   const totalPaginas = Number(paginacion.totalPaginas || 1);
   const desdeRegistro = totalRegistros === 0 ? 0 : ((paginaActual - 1) * paginacion.pageSize) + 1;
   const hastaRegistro = Math.min(paginaActual * paginacion.pageSize, totalRegistros);
+  const puedeEliminar = usuario && usuario.rol === 'admin';
+  const filtrosRetorno = [
+    'idFundo',
+    'idCampo',
+    'idVariedad',
+    'idCuartel',
+    'fechaDesde',
+    'fechaHasta',
+    'idEstructura',
+    'idPlaga',
+    'tipoPlaga',
+    'estadoResultado',
+    'pagina',
+  ];
   const buildPageUrl = (page) => {
     const params = new URLSearchParams();
 
@@ -28,6 +42,14 @@
 
   <a class="button button-secondary" href="/monitoreos/nuevo">Nuevo monitoreo</a>
 </section>
+
+<% if (success) { %>
+  <div class="alert alert-success" role="status"><%= success %></div>
+<% } %>
+
+<% if (error) { %>
+  <div class="alert" role="alert"><%= error %></div>
+<% } %>
 
 <% if (errors && errors.length > 0) { %>
   <div class="alert" role="alert">
@@ -209,7 +231,26 @@
                 >
                   Ver detalle
                 </button>
+                <a class="button button-secondary button-small" href="/monitoreos/<%= registro.idMuestreo %>/resultados">Resultados</a>
                 <a class="button button-secondary button-small" href="/monitoreos/<%= registro.idMuestreo %>/pdf">PDF</a>
+                <% if (puedeEliminar) { %>
+                  <button
+                    class="button button-danger button-small"
+                    type="button"
+                    data-action="confirmar-eliminacion"
+                    data-id-muestreo="<%= registro.idMuestreo %>"
+                    data-numero-muestreo="<%= registro.numeroMuestreo %>"
+                    data-fecha-monitoreo="<%= registro.fechaMonitoreo %>"
+                    data-fundo="<%= registro.fundo %>"
+                    data-campo="<%= registro.campo %>"
+                    data-variedad="<%= registro.variedad %>"
+                    data-cuartel="<%= registro.cuartel %>"
+                    data-sdp="<%= registro.sdp %>"
+                    data-estado-resultado="<%= registro.estadoLabel %>"
+                  >
+                    Eliminar
+                  </button>
+                <% } %>
               </div>
             </td>
           </tr>
@@ -229,5 +270,47 @@
     <a class="button button-secondary button-fit <%= paginaActual >= totalPaginas ? 'is-disabled' : '' %>" href="<%= paginaActual >= totalPaginas ? '#' : buildPageUrl(paginaActual + 1) %>">Siguiente</a>
   </nav>
 </section>
+
+<% if (puedeEliminar) { %>
+  <div id="historial-eliminar-modal" class="modal-shell is-hidden" hidden aria-hidden="true">
+    <div class="modal-backdrop" data-close-delete-modal="true"></div>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="historial-eliminar-title">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Accion irreversible</p>
+          <h2 id="historial-eliminar-title">¿Eliminar este monitoreo?</h2>
+          <p>Se eliminarán el monitoreo, sus resultados, conteos e imágenes asociadas. El origen de la muestra y el catálogo SDP no serán eliminados.</p>
+        </div>
+        <button class="modal-close" type="button" data-close-delete-modal="true" aria-label="Cerrar confirmacion">x</button>
+      </div>
+
+      <section class="summary-panel">
+        <h3>Monitoreo seleccionado</h3>
+        <dl class="summary-list">
+          <div><dt>Número</dt><dd data-delete-summary="numero">-</dd></div>
+          <div><dt>Fecha</dt><dd data-delete-summary="fecha">-</dd></div>
+          <div><dt>Fundo / Campo</dt><dd data-delete-summary="origen">-</dd></div>
+          <div><dt>Variedad / Cuartel</dt><dd data-delete-summary="ubicacion">-</dd></div>
+          <div><dt>SDP</dt><dd data-delete-summary="sdp">-</dd></div>
+          <div><dt>Estado del resultado</dt><dd data-delete-summary="estado">-</dd></div>
+        </dl>
+      </section>
+
+      <p><strong>Esta acción no se puede deshacer.</strong></p>
+
+      <form id="historial-eliminar-form" method="POST">
+        <% filtrosRetorno.forEach((key) => { %>
+          <% if (values[key]) { %>
+            <input type="hidden" name="<%= key %>" value="<%= values[key] %>">
+          <% } %>
+        <% }) %>
+        <div class="form-actions modal-actions">
+          <button class="button button-secondary button-fit" type="button" data-close-delete-modal="true">Cancelar</button>
+          <button id="historial-confirmar-eliminacion" class="button button-danger button-fit" type="submit">Eliminar monitoreo</button>
+        </div>
+      </form>
+    </section>
+  </div>
+<% } %>
 
 <script src="/js/monitoreos-historial.js"></script>

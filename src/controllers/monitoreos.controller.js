@@ -13,6 +13,7 @@ class MonitoreosController {
     this.listarVariedades = this.listarVariedades.bind(this);
     this.listarCuarteles = this.listarCuarteles.bind(this);
     this.historial = this.historial.bind(this);
+    this.eliminar = this.eliminar.bind(this);
     this.detalleParcial = this.detalleParcial.bind(this);
     this.descargarPdf = this.descargarPdf.bind(this);
     this.verImagen = this.verImagen.bind(this);
@@ -278,6 +279,8 @@ class MonitoreosController {
 
       return this.renderHistorial(res.status(resultado.success ? 200 : 400), {
         errors: resultado.errors,
+        error: this.getMensajeErrorHistorial(req.query),
+        success: this.getMensajeExitoHistorial(req.query),
         values: resultado.values,
         opciones: resultado.opciones,
         registros: resultado.registros,
@@ -291,6 +294,8 @@ class MonitoreosController {
 
       return this.renderHistorial(res.status(500), {
         errors: ['No fue posible cargar el historial de monitoreos.'],
+        error: null,
+        success: null,
         values: this.monitoreosService.normalizarFiltrosHistorial(req.query),
         opciones: {
           fundos: [],
@@ -310,6 +315,25 @@ class MonitoreosController {
           totalPaginas: 1,
         },
       });
+    }
+  }
+
+  async eliminar(req, res) {
+    try {
+      const result = await this.monitoreosService.eliminarMonitoreo(
+        req.params.idMuestreo,
+        req.session.usuario
+      );
+
+      const estado = result.success ? 'eliminado' : result.reason;
+      return res.redirect(this.construirUrlHistorial(req.body, estado));
+    } catch (error) {
+      console.error('[MONIPLA][ELIMINAR][ERROR]', {
+        idMuestreo: req.params.idMuestreo,
+        error: error.message,
+      });
+
+      return res.redirect(this.construirUrlHistorial(req.body, 'error-eliminacion'));
     }
   }
 
@@ -454,12 +478,66 @@ class MonitoreosController {
       title: 'Historial de Monitoreos',
       contentView: '../monitoreos/historial',
       errors: data.errors || [],
-      success: null,
+      success: data.success || null,
+      error: data.error || null,
       values: data.values,
       opciones: data.opciones,
       registros: data.registros || [],
       paginacion: data.paginacion,
     });
+  }
+
+  construirUrlHistorial(body = {}, estado = '') {
+    const values = this.monitoreosService.normalizarFiltrosHistorial(body);
+    const params = new URLSearchParams();
+    const filtrosPermitidos = [
+      'idFundo',
+      'idCampo',
+      'idVariedad',
+      'idCuartel',
+      'fechaDesde',
+      'fechaHasta',
+      'idEstructura',
+      'idPlaga',
+      'tipoPlaga',
+      'estadoResultado',
+      'pagina',
+    ];
+
+    filtrosPermitidos.forEach((key) => {
+      if (values[key]) {
+        params.set(key, values[key]);
+      }
+    });
+
+    if (estado === 'eliminado') {
+      params.set('eliminado', '1');
+    } else if (estado === 'ID_MUESTREO_INVALIDO') {
+      params.set('error', 'id-invalido');
+    } else if (estado === 'MUESTREO_NO_EXISTE') {
+      params.set('error', 'no-encontrado');
+    } else if (estado === 'NO_AUTORIZADO') {
+      params.set('error', 'no-autorizado');
+    } else {
+      params.set('error', 'eliminacion');
+    }
+
+    return `/monitoreos/historial?${params.toString()}`;
+  }
+
+  getMensajeExitoHistorial(query = {}) {
+    return query.eliminado === '1' ? 'Monitoreo eliminado correctamente.' : null;
+  }
+
+  getMensajeErrorHistorial(query = {}) {
+    const mensajes = {
+      'id-invalido': 'El monitoreo solicitado no es valido.',
+      'no-encontrado': 'El monitoreo ya no existe o ya fue eliminado.',
+      'no-autorizado': 'No tiene permisos para eliminar monitoreos.',
+      eliminacion: 'No fue posible eliminar el monitoreo. Intente nuevamente.',
+    };
+
+    return mensajes[query.error] || null;
   }
 }
 

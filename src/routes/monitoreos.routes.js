@@ -2,6 +2,7 @@ const express = require('express');
 const multer = require('multer');
 const MonitoreosController = require('../controllers/monitoreos.controller');
 const { ensureAuthenticated } = require('../middlewares/auth.middleware');
+const { ensureAdmin } = require('../middlewares/role.middleware');
 
 const router = express.Router();
 const monitoreosController = new MonitoreosController();
@@ -64,6 +65,12 @@ router.get(
   monitoreosController.listarCuarteles
 );
 router.get('/monitoreos/historial', ensureAuthenticated, monitoreosController.historial);
+router.post(
+  '/monitoreos/:idMuestreo/eliminar',
+  ensureAuthenticated,
+  ensureAdmin,
+  monitoreosController.eliminar
+);
 router.get('/monitoreos/imagenes/:idImagen', ensureAuthenticated, monitoreosController.verImagen);
 router.get('/monitoreos/:idMuestreo/pdf', ensureAuthenticated, monitoreosController.descargarPdf);
 router.get('/monitoreos/:idMuestreo/detalle-parcial', ensureAuthenticated, monitoreosController.detalleParcial);

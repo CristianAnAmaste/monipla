@@ -249,6 +249,34 @@ class MonitoreosService {
     };
   }
 
+  async eliminarMonitoreo(idMuestreo, usuarioSesion) {
+    const muestreoId = this.normalizarIdEstricto(idMuestreo);
+
+    if (!muestreoId) {
+      return { success: false, reason: 'ID_MUESTREO_INVALIDO' };
+    }
+
+    if (!usuarioSesion || usuarioSesion.rol !== 'admin') {
+      return { success: false, reason: 'NO_AUTORIZADO' };
+    }
+
+    try {
+      const eliminado = await this.monitoreosRepository.eliminarMuestreoTransaccional(muestreoId);
+
+      return {
+        success: true,
+        idMuestreo: eliminado.id_muestreo,
+        numeroMuestreo: eliminado.numero_muestreo,
+      };
+    } catch (error) {
+      if (error.message === 'MUESTREO_NO_EXISTE') {
+        return { success: false, reason: 'MUESTREO_NO_EXISTE' };
+      }
+
+      throw error;
+    }
+  }
+
   async obtenerDetalleParcialMuestreo(idMuestreo) {
     const muestreoId = this.normalizarIdEstricto(idMuestreo);
 
@@ -981,6 +1009,7 @@ class MonitoreosService {
         ? `${totalImagenes} ${totalImagenes === 1 ? 'imagen' : 'imagenes'}`
         : 'Sin evidencia',
       totalImagenes,
+      sdp: registro.sdp || '-',
       agroclima: this.prepararAgroclimaPresentacion(registro),
     };
   }

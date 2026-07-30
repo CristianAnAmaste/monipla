@@ -1,7 +1,12 @@
 (function () {
   const SELECTOR_BOTON_DETALLE = '[data-action="toggle-detalle"]';
+  const SELECTOR_BOTON_ELIMINAR = '[data-action="confirmar-eliminacion"]';
   let detalleAbierto = null;
+  let botonEliminarActivo = null;
   const detallesCargados = new Set();
+  const modalEliminar = document.getElementById('historial-eliminar-modal');
+  const formularioEliminar = document.getElementById('historial-eliminar-form');
+  const confirmarEliminacion = document.getElementById('historial-confirmar-eliminacion');
 
   function obtenerElementos(idMuestreo) {
     return {
@@ -36,6 +41,59 @@
 
   function mostrarError(container) {
     container.innerHTML = '<div class="detalle-error" role="alert">No se pudo cargar el detalle del monitoreo.</div>';
+  }
+
+  function setResumenEliminacion(nombre, valor) {
+    const target = document.querySelector(`[data-delete-summary="${nombre}"]`);
+
+    if (target) {
+      target.textContent = valor || '-';
+    }
+  }
+
+  function abrirModalEliminacion(button) {
+    if (!modalEliminar || !formularioEliminar) {
+      return;
+    }
+
+    const idMuestreo = String(button.dataset.idMuestreo || '').trim();
+
+    if (!/^\d+$/.test(idMuestreo)) {
+      return;
+    }
+
+    botonEliminarActivo = button;
+    formularioEliminar.action = `/monitoreos/${encodeURIComponent(idMuestreo)}/eliminar`;
+    setResumenEliminacion('numero', `N.º ${button.dataset.numeroMuestreo || '-'}`);
+    setResumenEliminacion('fecha', button.dataset.fechaMonitoreo || '-');
+    setResumenEliminacion('origen', `${button.dataset.fundo || '-'} / ${button.dataset.campo || '-'}`);
+    setResumenEliminacion('ubicacion', `${button.dataset.variedad || '-'} / ${button.dataset.cuartel || '-'}`);
+    setResumenEliminacion('sdp', button.dataset.sdp || '-');
+    setResumenEliminacion('estado', button.dataset.estadoResultado || '-');
+
+    if (confirmarEliminacion) {
+      confirmarEliminacion.disabled = false;
+      confirmarEliminacion.textContent = 'Eliminar monitoreo';
+    }
+
+    modalEliminar.classList.remove('is-hidden');
+    modalEliminar.hidden = false;
+    modalEliminar.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('has-modal-open');
+    confirmarEliminacion?.focus();
+  }
+
+  function cerrarModalEliminacion() {
+    if (!modalEliminar) {
+      return;
+    }
+
+    modalEliminar.classList.add('is-hidden');
+    modalEliminar.hidden = true;
+    modalEliminar.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('has-modal-open');
+    botonEliminarActivo?.focus();
+    botonEliminarActivo = null;
   }
 
   async function cargarDetalleMuestreo(idMuestreo, container) {
@@ -93,11 +151,36 @@
   document.addEventListener('click', (event) => {
     const button = event.target.closest(SELECTOR_BOTON_DETALLE);
 
-    if (!button) {
+    if (button) {
+      event.preventDefault();
+      toggleDetalleMuestreo(button.dataset.idMuestreo);
       return;
     }
 
-    event.preventDefault();
-    toggleDetalleMuestreo(button.dataset.idMuestreo);
+    const deleteButton = event.target.closest(SELECTOR_BOTON_ELIMINAR);
+
+    if (deleteButton) {
+      event.preventDefault();
+      abrirModalEliminacion(deleteButton);
+      return;
+    }
+
+    if (event.target.closest('[data-close-delete-modal="true"]')) {
+      event.preventDefault();
+      cerrarModalEliminacion();
+    }
+  });
+
+  formularioEliminar?.addEventListener('submit', () => {
+    if (confirmarEliminacion) {
+      confirmarEliminacion.disabled = true;
+      confirmarEliminacion.textContent = 'Eliminando...';
+    }
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && modalEliminar && !modalEliminar.hidden) {
+      cerrarModalEliminacion();
+    }
   });
 }());
