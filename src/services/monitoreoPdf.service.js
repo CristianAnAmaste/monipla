@@ -20,6 +20,9 @@ const COLORS = {
   primaryDark: '#164d36',
   soft: '#edf6f0',
   header: '#f5faf7',
+  viable: '#e7f4eb',
+  noViable: '#f8eeea',
+  noViableText: '#85503f',
   white: '#ffffff',
 };
 
@@ -31,22 +34,25 @@ class MonitoreoPdfService {
   }
 
   async generarInforme(detalle, generatedAt = new Date()) {
+    const matriz = this.construirMatrizResultados(detalle);
+
     return this.crearBuffer(async (doc) => {
       await this.agregarEncabezado(doc, detalle, generatedAt);
       this.agregarDatosCabecera(doc, detalle);
       this.agregarResponsables(doc, detalle);
       this.agregarAgroclima(doc, detalle.agroclima);
-      this.agregarResultado(doc, detalle);
-      this.agregarTotales(doc, detalle);
+      this.agregarResultado(doc, detalle, matriz);
+      this.agregarTotales(doc, detalle, matriz);
       await this.agregarEvidencias(doc, detalle);
       this.agregarPiesPagina(doc);
-    });
+    }, matriz.layout);
   }
 
-  crearBuffer(build) {
+  crearBuffer(build, layout = 'portrait') {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({
         size: 'LETTER',
+        layout,
         margins: {
           top: 40,
           right: 40,
@@ -208,7 +214,7 @@ class MonitoreoPdfService {
     this.agregarTexto(doc, 'No hay estación para el fundo.');
   }
 
-  agregarResultado(doc, detalle) {
+  agregarResultado(doc, detalle, matriz) {
     const info = detalle.cabecera || {};
 
     this.agregarSeccion(doc, 'Resultado de plagas');
@@ -221,90 +227,338 @@ class MonitoreoPdfService {
       return;
     }
 
-    if (detalle.estadoResultado !== 'CON_PLAGAS' || !Array.isArray(detalle.plagas) || detalle.plagas.length === 0) {
+    if (detalle.estadoResultado !== 'CON_PLAGAS' || !matriz.filas.length) {
       this.agregarTexto(doc, 'El monitoreo no tiene resultados de plagas registrados.');
       return;
     }
 
-    detalle.plagas.forEach((plaga) => this.agregarPlaga(doc, plaga));
+    if (!matriz.estadios.length) {
+      this.agregarTexto(doc, 'Hay plagas registradas, pero no existen conteos por estadio para construir la matriz.');
+      return;
+    }
+
+    this.agregarMatrizResultados(doc, matriz);
   }
 
-  agregarPlaga(doc, plaga) {
-    this.ensureSpace(doc, 74);
+  agregarTotales(doc, detalle, matriz) {
+    this.agregarSeccion(doc, 'Totales');
 
-    const x = doc.page.margins.left;
-    const width = this.anchoUtil(doc);
-    const y = doc.y + 2;
+    if (detalle.estadoResultado === 'SIN_PLAGAS') {
+      this.agregarTexto(doc, 'Total general: 0. Monitoreo registrado sin plagas.');
+      return;
+    }
 
-    doc.save()
-      .roundedRect(x, y, width, 30, 4)
-      .fill(COLORS.soft)
-      .restore();
+    this.agregarBadges(doc, [
+      ['Plagas detectadas', matriz.filas.length],
+      ['Viables', matriz.totales.viable],
+      ['No viables', matriz.totales.noViable],
+      ['Total general', matriz.totales.general],
+    ]);
+  }
 
-    doc.font('Helvetica-Bold')
-      .fontSize(FONT.subtitle)
-      .fillColor(COLORS.primaryDark)
-      .text(this.valor(plaga.nombrePlaga), x + 9, y + 8, {
-        width: width - 125,
-        continued: false,
+  construirMatrizResultados(detalle) {
+    const estadios = [];
+    const estadiosPorClave = new Map();
+    const filas = [];
+    const filasPorClave = new Map();
+    const totales = { viable: 0, noViable: 0, general: 0 };
+    const plagas = Array.isArray(detalle.plagas) ? detalle.plagas : [];
+
+    plagas.forEach((plaga, indicePlaga) => {
+      const clavePlaga = this.claveMatriz(plaga.idPlaga, plaga.nombrePlaga, indicePlaga);
+      let fila = filasPorClave.get(clavePlaga);
+
+      if (!fila) {
+        fila = {
+          plaga: this.valor(plaga.nombrePlaga) || 'Plaga sin nombre',
+          estadios: new Map(),
+          totalViable: 0,
+          totalNoViable: 0,
+          totalGeneral: 0,
+        };
+        filasPorClave.set(clavePlaga, fila);
+        filas.push(fila);
+      }
+
+      (Array.isArray(plaga.conteos) ? plaga.conteos : []).forEach((conteo, indiceConteo) => {
+        const claveEstadio = this.claveMatriz(conteo.idEstadio, conteo.estadio, indiceConteo);
+        let estadio = estadiosPorClave.get(claveEstadio);
+
+        if (!estadio) {
+          estadio = {
+            clave: claveEstadio,
+            nombre: this.valor(conteo.estadio) || 'Estadio sin nombre',
+            orden: this.ordenEstadio(conteo.idEstadio, estadios.length),
+          };
+          estadiosPorClave.set(claveEstadio, estadio);
+          estadios.push(estadio);
+        }
+
+        const estado = this.clasificarEstadoViabilidad(conteo.estado);
+        const cantidad = this.numeroCantidad(conteo.cantidad);
+        let celda = fila.estadios.get(claveEstadio);
+
+        if (!celda) {
+          celda = { viable: null, noViable: null };
+          fila.estadios.set(claveEstadio, celda);
+        }
+
+        celda[estado] = (celda[estado] === null ? 0 : celda[estado]) + cantidad;
+        fila[estado === 'viable' ? 'totalViable' : 'totalNoViable'] += cantidad;
+        fila.totalGeneral += cantidad;
+        totales[estado] += cantidad;
+        totales.general += cantidad;
       });
+    });
 
-    doc.font('Helvetica-Bold')
-      .fontSize(11)
-      .fillColor(COLORS.primaryDark)
-      .text(`Total: ${this.valor(plaga.cantidadTotal)}`, x + width - 104, y + 8, {
-        width: 94,
+    estadios.sort((a, b) => a.orden - b.orden);
+    const layout = this.requiereHorizontal(estadios.length) ? 'landscape' : 'portrait';
+
+    return { estadios, filas, totales, layout };
+  }
+
+  claveMatriz(id, nombre, indice) {
+    const identificador = this.valor(id);
+    return identificador ? `id:${identificador}` : `nombre:${this.valor(nombre)}:${indice}`;
+  }
+
+  clasificarEstadoViabilidad(estado) {
+    const normalizado = this.valor(estado)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+
+    return /^no\s*viable\b/.test(normalizado) ? 'noViable' : 'viable';
+  }
+
+  numeroCantidad(cantidad) {
+    const numero = Number(cantidad);
+    return Number.isFinite(numero) ? numero : 0;
+  }
+
+  ordenEstadio(idEstadio, indice) {
+    const orden = Number(idEstadio);
+    return Number.isFinite(orden) ? orden : Number.MAX_SAFE_INTEGER + indice;
+  }
+
+  requiereHorizontal(totalEstadios) {
+    const anchoRetrato = 612 - 80;
+    const anchoMinimo = 116 + 126 + (totalEstadios * 64);
+    return anchoMinimo > anchoRetrato;
+  }
+
+  agregarMatrizResultados(doc, matriz) {
+    const diseno = this.obtenerDisenoMatriz(doc, matriz);
+    this.dibujarEncabezadoMatriz(doc, matriz, diseno);
+
+    matriz.filas.forEach((fila) => {
+      const altura = this.alturaFilaMatriz(doc, fila, matriz, diseno);
+      this.asegurarEspacioMatriz(doc, altura, matriz, diseno);
+      this.dibujarFilaMatriz(doc, fila, matriz, diseno, false);
+    });
+  }
+
+  obtenerDisenoMatriz(doc, matriz) {
+    const ancho = this.anchoUtil(doc);
+    const mostrarTotalesEstado = matriz.estadios.length <= 8;
+    const anchoTotales = mostrarTotalesEstado ? 126 : 52;
+    const anchoPlaga = doc.page.width > doc.page.height ? 136 : 116;
+    const anchoEstadio = (ancho - anchoPlaga - anchoTotales) / matriz.estadios.length;
+
+    return {
+      anchoPlaga,
+      anchoEstadio,
+      anchoSubcolumna: anchoEstadio / 2,
+      anchoTotales,
+      mostrarTotalesEstado,
+      padding: 3,
+      fontSize: anchoEstadio < 64 ? 7.2 : 8.2,
+      headerFontSize: anchoEstadio < 64 ? 6.8 : 7.5,
+    };
+  }
+
+  dibujarEncabezadoMatriz(doc, matriz, diseno) {
+    const x = doc.page.margins.left;
+    const altoSubencabezado = 19;
+    const altoEncabezado = Math.max(24, ...matriz.estadios.map((estadio) => doc.font('Helvetica-Bold')
+      .fontSize(diseno.headerFontSize)
+      .heightOfString(estadio.nombre, { width: diseno.anchoEstadio - 6, align: 'center' }) + 6));
+    const altoTotal = altoEncabezado + altoSubencabezado;
+
+    this.ensureSpace(doc, altoTotal + 24);
+    const y = doc.y;
+    this.dibujarCeldaMatriz(doc, 'Plaga', x, y, diseno.anchoPlaga, altoTotal, {
+      fill: COLORS.soft,
+      bold: true,
+      fontSize: diseno.headerFontSize,
+      align: 'left',
+    });
+
+    let cellX = x + diseno.anchoPlaga;
+    matriz.estadios.forEach((estadio) => {
+      this.dibujarCeldaMatriz(doc, estadio.nombre, cellX, y, diseno.anchoEstadio, altoEncabezado, {
+        fill: COLORS.soft,
+        bold: true,
+        fontSize: diseno.headerFontSize,
+        align: 'center',
+      });
+      this.dibujarCeldaMatriz(doc, 'Viable', cellX, y + altoEncabezado, diseno.anchoSubcolumna, altoSubencabezado, {
+        fill: COLORS.viable,
+        bold: true,
+        color: COLORS.primaryDark,
+        fontSize: diseno.headerFontSize,
+        align: 'center',
+      });
+      this.dibujarCeldaMatriz(doc, 'No viable', cellX + diseno.anchoSubcolumna, y + altoEncabezado, diseno.anchoSubcolumna, altoSubencabezado, {
+        fill: COLORS.noViable,
+        bold: true,
+        color: COLORS.noViableText,
+        fontSize: diseno.headerFontSize,
+        align: 'center',
+      });
+      cellX += diseno.anchoEstadio;
+    });
+
+    if (diseno.mostrarTotalesEstado) {
+      this.dibujarCeldaMatriz(doc, 'Total viable', cellX, y, 42, altoTotal, {
+        fill: COLORS.viable,
+        bold: true,
+        color: COLORS.primaryDark,
+        fontSize: diseno.headerFontSize,
+        align: 'center',
+      });
+      this.dibujarCeldaMatriz(doc, 'Total no viable', cellX + 42, y, 42, altoTotal, {
+        fill: COLORS.noViable,
+        bold: true,
+        color: COLORS.noViableText,
+        fontSize: diseno.headerFontSize,
+        align: 'center',
+      });
+      cellX += 84;
+    }
+    this.dibujarCeldaMatriz(doc, 'Total general', cellX, y, 42, altoTotal, {
+      fill: COLORS.soft,
+      bold: true,
+      fontSize: diseno.headerFontSize,
+      align: 'center',
+    });
+    doc.y = y + altoTotal;
+  }
+
+  asegurarEspacioMatriz(doc, alturaFila, matriz, diseno) {
+    const fondo = doc.page.height - doc.page.margins.bottom - 10;
+    if (doc.y + alturaFila > fondo) {
+      doc.addPage();
+      this.dibujarEncabezadoMatriz(doc, matriz, diseno);
+    }
+  }
+
+  alturaFilaMatriz(doc, fila, matriz, diseno) {
+    const alturaTexto = doc.font('Helvetica').fontSize(diseno.fontSize).heightOfString(fila.plaga, {
+      width: diseno.anchoPlaga - (diseno.padding * 2),
+      lineGap: 0,
+    });
+    return Math.max(21, alturaTexto + (diseno.padding * 2));
+  }
+
+  dibujarFilaMatriz(doc, fila, matriz, diseno, esTotal) {
+    const altura = this.alturaFilaMatriz(doc, fila, matriz, diseno);
+    const y = doc.y;
+    const fill = esTotal ? COLORS.soft : COLORS.white;
+    this.dibujarCeldaMatriz(doc, fila.plaga, doc.page.margins.left, y, diseno.anchoPlaga, altura, {
+      fill,
+      bold: esTotal,
+      fontSize: diseno.fontSize,
+      align: 'left',
+    });
+
+    let cellX = doc.page.margins.left + diseno.anchoPlaga;
+    matriz.estadios.forEach((estadio) => {
+      this.dibujarCeldaMatriz(doc, this.textoCeldaMatriz(fila, estadio.clave, 'viable'), cellX, y, diseno.anchoSubcolumna, altura, {
+        fill,
+        bold: esTotal,
+        fontSize: diseno.fontSize,
         align: 'right',
       });
+      this.dibujarCeldaMatriz(doc, this.textoCeldaMatriz(fila, estadio.clave, 'noViable'), cellX + diseno.anchoSubcolumna, y, diseno.anchoSubcolumna, altura, {
+        fill,
+        bold: esTotal,
+        fontSize: diseno.fontSize,
+        color: COLORS.noViableText,
+        align: 'right',
+      });
+      cellX += diseno.anchoEstadio;
+    });
 
-    doc.y = y + 36;
-
-    this.agregarKeyValuesEnColumnas(doc, [
-      ['Nombre cientifico', plaga.nombreCientifico],
-      ['Clasificacion / tipo', plaga.tipoRegistro],
-      ['Cuarentenaria', plaga.esCuarentenaria ? 'Si' : ''],
-      ['Observacion', plaga.observacion],
-    ]);
-
-    this.agregarTabla(doc, ['Estadio', 'Estado', 'Cantidad'], (plaga.conteos || []).map((conteo) => [
-      conteo.estadio,
-      conteo.estado,
-      conteo.cantidad,
-    ]), [220, 190, 82]);
+    if (diseno.mostrarTotalesEstado) {
+      this.dibujarCeldaMatriz(doc, this.formatearCantidad(fila.totalViable), cellX, y, 42, altura, {
+        fill: esTotal ? COLORS.viable : COLORS.white,
+        bold: esTotal,
+        fontSize: diseno.fontSize,
+        color: COLORS.primaryDark,
+        align: 'right',
+      });
+      this.dibujarCeldaMatriz(doc, this.formatearCantidad(fila.totalNoViable), cellX + 42, y, 42, altura, {
+        fill: esTotal ? COLORS.noViable : COLORS.white,
+        bold: esTotal,
+        fontSize: diseno.fontSize,
+        color: COLORS.noViableText,
+        align: 'right',
+      });
+      cellX += 84;
+    }
+    this.dibujarCeldaMatriz(doc, this.formatearCantidad(fila.totalGeneral), cellX, y, 42, altura, {
+      fill,
+      bold: esTotal,
+      fontSize: diseno.fontSize,
+      align: 'right',
+    });
+    doc.y = y + altura;
   }
 
-  agregarTotales(doc, detalle) {
-    const resumen = detalle.resumen || {};
-    this.agregarSeccion(doc, 'Totales');
-    this.agregarBadges(doc, [
-      ['Plagas detectadas', resumen.totalPlagas],
-      ['Conteos', resumen.totalConteos],
-      ['Ejemplares', resumen.totalEjemplares],
-    ]);
+  valorCeldaMatriz(fila, claveEstadio, estado, porDefecto = null) {
+    const celda = fila.estadios.get(claveEstadio);
+    return celda && celda[estado] !== null ? celda[estado] : porDefecto;
+  }
 
-    if (Array.isArray(detalle.plagas) && detalle.plagas.length > 0) {
-      this.agregarSubseccionTabla(doc, 'Totales por plaga');
-      this.agregarTabla(doc, ['Plaga', 'Total'], detalle.plagas.map((plaga) => [
-        plaga.nombrePlaga,
-        plaga.cantidadTotal,
-      ]));
-    }
+  textoCeldaMatriz(fila, claveEstadio, estado) {
+    const cantidad = this.valorCeldaMatriz(fila, claveEstadio, estado);
+    return cantidad === null ? '—' : this.formatearCantidad(cantidad);
+  }
 
-    if (Array.isArray(resumen.totalesPorEstado) && resumen.totalesPorEstado.length > 0) {
-      this.agregarSubseccionTabla(doc, 'Totales por estado');
-      this.agregarTabla(doc, ['Estado', 'Total'], resumen.totalesPorEstado.map((item) => [
-        item.nombre,
-        item.cantidad,
-      ]));
-    }
+  formatearCantidad(cantidad) {
+    return new Intl.NumberFormat('es-CL', { maximumFractionDigits: 2 }).format(cantidad);
+  }
 
-    if (Array.isArray(resumen.totalesPorEstadio) && resumen.totalesPorEstadio.length > 0) {
-      this.agregarSubseccionTabla(doc, 'Totales por estadio');
-      this.agregarTabla(doc, ['Estadio', 'Total'], resumen.totalesPorEstadio.map((item) => [
-        item.nombre,
-        item.cantidad,
-      ]));
-    }
+  dibujarCeldaMatriz(doc, valor, x, y, ancho, alto, options = {}) {
+    const padding = 3;
+    const font = options.bold ? 'Helvetica-Bold' : 'Helvetica';
+    const fontSize = options.fontSize || FONT.table;
+    const color = options.color || COLORS.text;
+    const text = this.valor(valor);
+    const textHeight = doc.font(font).fontSize(fontSize).heightOfString(text, {
+      width: ancho - (padding * 2),
+      align: options.align || 'left',
+      lineGap: 0,
+    });
+
+    doc.save()
+      .fillColor(options.fill || COLORS.white)
+      .rect(x, y, ancho, alto)
+      .fill()
+      .strokeColor(COLORS.line)
+      .lineWidth(0.55)
+      .rect(x, y, ancho, alto)
+      .stroke()
+      .restore();
+    doc.font(font)
+      .fontSize(fontSize)
+      .fillColor(color)
+      .text(text, x + padding, y + Math.max(padding, (alto - textHeight) / 2), {
+        width: ancho - (padding * 2),
+        align: options.align || 'left',
+        lineGap: 0,
+      });
   }
 
   async agregarEvidencias(doc, detalle) {
