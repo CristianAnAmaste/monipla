@@ -297,6 +297,69 @@ class MonitoreosService {
       this.monitoreosRepository.obtenerImagenesMuestreo(muestreoId),
     ]);
 
+    return this.construirDetallePresentacion(cabecera, filasResultados, imagenes);
+  }
+
+  async generarPdfMuestreo(idMuestreo) {
+    const detalle = await this.obtenerDetalleParcialMuestreo(idMuestreo);
+    const generatedAt = new Date();
+    detalle.imagenes = await Promise.all(detalle.imagenes.map(async (imagen) => {
+      try {
+        const registro = await this.monitoreosRepository.obtenerImagenPorId(imagen.idImagen);
+
+        return {
+          ...imagen,
+          buffer: registro && registro.imagen ? registro.imagen : null,
+        };
+      } catch (error) {
+        console.warn('[MONIPLA][PDF][IMAGEN_NO_DISPONIBLE]', {
+          idMuestreo: detalle.idMuestreo,
+          idImagen: imagen.idImagen,
+          error: error.message,
+        });
+
+        return imagen;
+      }
+    }));
+
+    return {
+      filename: `monipla-muestreo-${detalle.numeroMuestreo}.pdf`,
+      buffer: await this.monitoreoPdfService.generarInforme(detalle, generatedAt),
+    };
+  }
+
+  async generarPdfGeneralMonitoreos(query = {}) {
+    const filtros = this.normalizarFiltrosHistorial(query);
+    const errors = this.validarFiltrosHistorial(filtros);
+
+    if (errors.length > 0) {
+      const error = new Error('FILTROS_REPORTE_INVALIDOS');
+      error.validationErrors = errors;
+      throw error;
+    }
+
+    const [filas, catalogoPlagas, catalogoEstadios, opciones] = await Promise.all([
+      this.monitoreosRepository.obtenerDatosReporteGeneral(filtros),
+      this.monitoreosRepository.listarPlagasActivas(),
+      this.monitoreosRepository.listarEstadiosActivos(),
+      this.monitoreosRepository.obtenerFiltrosHistorial(),
+    ]);
+    const monitoreos = this.agruparDatosReporteGeneral(filas);
+    const reporte = {
+      monitoreos,
+      catalogoPlagas: [...catalogoPlagas].sort((a, b) => Number(a.value) - Number(b.value)),
+      catalogoEstadios: [...catalogoEstadios].sort((a, b) => Number(a.value) - Number(b.value)),
+      filtros: this.construirResumenFiltrosReporte(filtros, opciones),
+    };
+
+    return {
+      filename: 'monipla-reporte-general-monitoreos.pdf',
+      buffer: await this.monitoreoPdfService.generarReporteGeneral(reporte, new Date()),
+      totalMonitoreos: monitoreos.length,
+    };
+  }
+
+  construirDetallePresentacion(cabecera, filasResultados, imagenes = []) {
     const estado = this.obtenerPresentacionEstadoResultado(cabecera.estado_resultado);
     const plagas = this.agruparResultadosDetalle(filasResultados);
     const totalConteos = plagas.reduce((total, plaga) => total + plaga.conteos.length, 0);
@@ -325,6 +388,7 @@ class MonitoreosService {
         trazabilidad: cabecera.trazabilidad || '-',
         estructura: cabecera.nombre_estructura || '-',
         muestreador: cabecera.nombre_muestreador || '',
+        cantUnidadesMuestreadas: cabecera.cant_unidades_muestreadas,
         estadoFenologico: cabecera.nombre_estado_fenologico || '',
         fechaSolicitudMuestra: this.formatearFechaIso(cabecera.fecha_solicitud_muestra),
         fechaRecepcionMuestra: this.formatearFechaIso(cabecera.fecha_recepcion_muestra),
@@ -361,32 +425,42 @@ class MonitoreosService {
     };
   }
 
-  async generarPdfMuestreo(idMuestreo) {
-    const detalle = await this.obtenerDetalleParcialMuestreo(idMuestreo);
-    const generatedAt = new Date();
-    detalle.imagenes = await Promise.all(detalle.imagenes.map(async (imagen) => {
-      try {
-        const registro = await this.monitoreosRepository.obtenerImagenPorId(imagen.idImagen);
+  agruparDatosReporteGeneral(filas) {
+    const monitoreos = new Map();
 
-        return {
-          ...imagen,
-          buffer: registro && registro.imagen ? registro.imagen : null,
-        };
-      } catch (error) {
-        console.warn('[MONIPLA][PDF][IMAGEN_NO_DISPONIBLE]', {
-          idMuestreo: detalle.idMuestreo,
-          idImagen: imagen.idImagen,
-          error: error.message,
-        });
-
-        return imagen;
+    (Array.isArray(filas) ? filas : []).forEach((fila) => {
+      if (!monitoreos.has(fila.id_muestreo)) {
+        monitoreos.set(fila.id_muestreo, { cabecera: fila, filasResultados: [] });
       }
-    }));
 
-    return {
-      filename: `monipla-muestreo-${detalle.numeroMuestreo}.pdf`,
-      buffer: await this.monitoreoPdfService.generarInforme(detalle, generatedAt),
+      if (fila.id_resultado_plaga) {
+        monitoreos.get(fila.id_muestreo).filasResultados.push(fila);
+      }
+    });
+
+    return Array.from(monitoreos.values()).map(({ cabecera, filasResultados }) => (
+      this.construirDetallePresentacion(cabecera, filasResultados)
+    ));
+  }
+
+  construirResumenFiltrosReporte(filtros, opciones) {
+    const etiqueta = (items, value, fallback) => {
+      const item = (items || []).find((option) => String(option.value) === String(value));
+      return item ? item.label : fallback;
     };
+
+    return [
+      ['Fundo', filtros.idFundo ? etiqueta(opciones.fundos, filtros.idFundo, 'Todos') : 'Todos'],
+      ['Campo', filtros.idCampo ? etiqueta(opciones.campos, filtros.idCampo, 'Todos') : 'Todos'],
+      ['Variedad', filtros.idVariedad ? etiqueta(opciones.variedades, filtros.idVariedad, 'Todas') : 'Todas'],
+      ['Cuartel', filtros.idCuartel ? etiqueta(opciones.cuarteles, filtros.idCuartel, 'Todos') : 'Todos'],
+      ['Desde', filtros.fechaDesde || '—'],
+      ['Hasta', filtros.fechaHasta || '—'],
+      ['Estructura', filtros.idEstructura ? etiqueta(opciones.estructuras, filtros.idEstructura, 'Todas') : 'Todas'],
+      ['Plaga', filtros.idPlaga ? etiqueta(opciones.plagas, filtros.idPlaga, 'Todas') : 'Todas'],
+      ['Tipo de plaga', filtros.tipoPlaga || 'Todos'],
+      ['Estado resultado', filtros.estadoResultado ? etiqueta(opciones.estadosResultado, filtros.estadoResultado, filtros.estadoResultado) : 'Todos'],
+    ];
   }
 
   async obtenerImagenMuestreo(idImagen) {

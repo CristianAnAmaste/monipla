@@ -48,7 +48,32 @@ class MonitoreoPdfService {
     }, matriz.layout);
   }
 
-  crearBuffer(build, layout = 'portrait') {
+  async generarReporteGeneral(reporte, generatedAt = new Date()) {
+    const catalogoPlagas = Array.isArray(reporte.catalogoPlagas) ? reporte.catalogoPlagas : [];
+    const catalogoEstadios = Array.isArray(reporte.catalogoEstadios) ? reporte.catalogoEstadios : [];
+    const monitoreos = Array.isArray(reporte.monitoreos) ? reporte.monitoreos : [];
+    const bloques = monitoreos.map((detalle) => ({
+      detalle,
+      matriz: this.construirMatrizResultados(detalle, { catalogoPlagas, catalogoEstadios }),
+    }));
+
+    return this.crearBuffer(async (doc) => {
+      await this.agregarEncabezadoReporteGeneral(doc, reporte.filtros, generatedAt);
+
+      if (!bloques.length) {
+        this.agregarTexto(doc, 'No se encontraron monitoreos para los filtros aplicados.');
+      } else {
+        bloques.forEach((bloque) => this.agregarBloqueReporteGeneral(doc, bloque.detalle, bloque.matriz));
+      }
+
+      this.agregarPiesPagina(doc);
+    }, 'landscape', {
+      Title: 'Reporte general de monitoreo de plagas',
+      Subject: 'Reporte general de MONIPLA',
+    });
+  }
+
+  crearBuffer(build, layout = 'portrait', info = {}) {
     return new Promise((resolve, reject) => {
       const doc = new PDFDocument({
         size: 'LETTER',
@@ -64,6 +89,7 @@ class MonitoreoPdfService {
           Title: 'Informe de Monitoreo de Plagas',
           Author: 'MONIPLA',
           Subject: 'Informe individual de monitoreo',
+          ...info,
         },
       });
       const chunks = [];
@@ -134,6 +160,77 @@ class MonitoreoPdfService {
       });
 
     doc.y = y + 86;
+  }
+
+  async agregarEncabezadoReporteGeneral(doc, filtros, generatedAt) {
+    const x = doc.page.margins.left;
+    const y = doc.y;
+    const width = this.anchoUtil(doc);
+    const logoWidth = 82;
+
+    doc.save()
+      .roundedRect(x, y, width, 72, 5)
+      .fill(COLORS.header)
+      .restore();
+
+    if (this.logoPath) {
+      try {
+        const logoBuffer = await this.obtenerBufferImagen(this.logoPath);
+        doc.image(logoBuffer, x + 12, y + 12, { fit: [logoWidth, 48] });
+      } catch (_) {
+        // El reporte no debe fallar si el logo no puede cargarse.
+      }
+    }
+
+    const titleX = this.logoPath ? x + logoWidth + 18 : x + 14;
+    doc.font('Helvetica-Bold')
+      .fontSize(FONT.title)
+      .fillColor(COLORS.primaryDark)
+      .text('Reporte general de monitoreo de plagas', titleX, y + 12, {
+        width: x + width - titleX - 12,
+      });
+    doc.font('Helvetica')
+      .fontSize(9.5)
+      .fillColor(COLORS.muted)
+      .text(`MONIPLA - Fecha de generacion: ${this.formatearFechaHora(generatedAt)}`, titleX, y + 40, {
+        width: x + width - titleX - 12,
+      });
+    doc.y = y + 82;
+
+    this.agregarSeccion(doc, 'Filtros aplicados');
+    const items = Array.isArray(filtros) && filtros.length > 0
+      ? filtros
+      : [['Filtros', 'Todos los monitoreos']];
+    this.agregarResumenFiltrosReporte(doc, items);
+  }
+
+  agregarResumenFiltrosReporte(doc, items) {
+    const x = doc.page.margins.left;
+    const width = this.anchoUtil(doc);
+    const gap = 14;
+    const colWidth = (width - gap) / 2;
+    const y = doc.y;
+
+    for (let index = 0; index < items.length; index += 2) {
+      const row = Math.floor(index / 2);
+      const rowY = y + (row * 15);
+      items.slice(index, index + 2).forEach(([label, value], itemIndex) => {
+        const itemX = x + (itemIndex * (colWidth + gap));
+        doc.font('Helvetica-Bold')
+          .fontSize(7.5)
+          .fillColor(COLORS.muted)
+          .text(`${label}:`, itemX, rowY, { width: colWidth, lineBreak: false });
+        const labelWidth = doc.widthOfString(`${label}:`);
+        doc.font('Helvetica')
+          .fillColor(COLORS.text)
+          .text(this.valorReporte(value), itemX + labelWidth + 3, rowY, {
+            width: colWidth - labelWidth - 3,
+            lineBreak: false,
+          });
+      });
+    }
+
+    doc.y = y + (Math.ceil(items.length / 2) * 15) + 4;
   }
 
   agregarDatosCabecera(doc, detalle) {
@@ -256,29 +353,178 @@ class MonitoreoPdfService {
     ]);
   }
 
-  construirMatrizResultados(detalle) {
+  agregarBloqueReporteGeneral(doc, detalle, matriz) {
+    const x = doc.page.margins.left;
+    const width = this.anchoUtil(doc);
+    const alturaMinima = 224;
+
+    if (!this.hayEspacio(doc, alturaMinima) && doc.y > doc.page.margins.top + 4) {
+      doc.addPage();
+    }
+
+    const y = doc.y;
+    doc.save()
+      .roundedRect(x, y, width, 24, 4)
+      .fill(COLORS.soft)
+      .restore();
+    doc.font('Helvetica-Bold')
+      .fontSize(10.5)
+      .fillColor(COLORS.primaryDark)
+      .text(`Monitoreo #${this.valorReporte(detalle.numeroMuestreo)} - ${this.valorReporte((detalle.cabecera || {}).fechaMonitoreo)}`, x + 8, y + 7, {
+        width: width - 180,
+      });
+    doc.font('Helvetica-Bold')
+      .fontSize(9)
+      .fillColor(COLORS.text)
+      .text(`Estado: ${this.valorReporte(detalle.estadoResultado)}`, x + width - 170, y + 7, {
+        width: 162,
+        align: 'right',
+      });
+
+    const top = y + 30;
+    const gap = 10;
+    const anchoCabecera = Math.round(width * 0.36);
+    const anchoMatriz = width - anchoCabecera - gap;
+    const finCabecera = this.dibujarCabeceraReporteGeneral(doc, detalle, x, top, anchoCabecera);
+
+    doc.y = top;
+    const finMatriz = this.agregarMatrizResultados(doc, matriz, {
+      x: x + anchoCabecera + gap,
+      width: anchoMatriz,
+      anchoPlaga: 112,
+    });
+    doc.y = Math.max(finCabecera, finMatriz) + 5;
+    this.agregarNotasReporteGeneral(doc, matriz);
+    doc.y += 7;
+  }
+
+  dibujarCabeceraReporteGeneral(doc, detalle, x, y, width) {
+    const info = detalle.cabecera || {};
+    const items = [
+      ['Fundo', info.fundo],
+      ['Campo', info.campo],
+      ['Variedad', info.variedad],
+      ['Cuartel', info.cuartel],
+      ['Muestrador', info.muestreador],
+      ['SDP', info.sdp],
+      ['CSG', info.csg],
+      ['Unidades revisadas', info.cantUnidadesMuestreadas],
+      ['Estado fenologico', info.estadoFenologico],
+      ['Trazabilidad', info.trazabilidad],
+    ];
+    const gap = 7;
+    const colWidth = (width - gap) / 2;
+    let bottom = y;
+
+    items.forEach(([label, value], index) => {
+      const column = index % 2;
+      const row = Math.floor(index / 2);
+      const cellX = x + (column * (colWidth + gap));
+      const cellY = y + (row * 27);
+      doc.font('Helvetica-Bold')
+        .fontSize(7)
+        .fillColor(COLORS.muted)
+        .text(`${label}:`, cellX, cellY, { width: colWidth, lineBreak: false });
+      doc.font('Helvetica')
+        .fontSize(8.3)
+        .fillColor(COLORS.text)
+        .text(this.valorReporte(value), cellX, cellY + 9, { width: colWidth, lineGap: 0 });
+      bottom = Math.max(bottom, cellY + 23);
+    });
+
+    const observacion = this.valorReporte(info.observacionGeneral);
+    doc.font('Helvetica-Bold')
+      .fontSize(7)
+      .fillColor(COLORS.muted)
+      .text('Observacion general:', x, bottom + 3, { width });
+    const observacionY = bottom + 12;
+    const observacionHeight = doc.font('Helvetica')
+      .fontSize(8.3)
+      .heightOfString(observacion, { width, lineGap: 0 });
+    doc.fillColor(COLORS.text)
+      .text(observacion, x, observacionY, { width, lineGap: 0 });
+
+    return observacionY + Math.max(12, observacionHeight);
+  }
+
+  agregarNotasReporteGeneral(doc, matriz) {
+    const notas = matriz.filas
+      .map((fila) => this.obtenerNotaReporteGeneral(fila))
+      .filter(Boolean);
+
+    if (!notas.length) {
+      return;
+    }
+
+    this.ensureSpace(doc, 20);
+    doc.font('Helvetica')
+      .fontSize(7.5)
+      .fillColor(COLORS.muted)
+      .text(notas.join(' | '), doc.page.margins.left, doc.y, {
+        width: this.anchoUtil(doc),
+        lineGap: 0,
+      });
+  }
+
+  obtenerNotaReporteGeneral(fila) {
+    const detalle = fila.detalleTexto || fila.observacion;
+
+    if (fila.tipoRegistro === 'TEXTO' && detalle) {
+      return `${fila.plaga} (texto): ${detalle}`;
+    }
+
+    if (fila.tipoRegistro === 'PRESENCIA' && fila.tieneResultado) {
+      return detalle ? `${fila.plaga} (presencia): ${detalle}` : `${fila.plaga}: registro de presencia sin conteos.`;
+    }
+
+    return detalle ? `${fila.plaga}: ${detalle}` : '';
+  }
+
+  valorReporte(value) {
+    return this.valor(value) || '—';
+  }
+
+  construirMatrizResultados(detalle, options = {}) {
     const estadios = [];
     const estadiosPorClave = new Map();
     const filas = [];
     const filasPorClave = new Map();
     const totales = { viable: 0, noViable: 0, general: 0 };
     const plagas = Array.isArray(detalle.plagas) ? detalle.plagas : [];
+    const catalogoPlagas = Array.isArray(options.catalogoPlagas) ? options.catalogoPlagas : [];
+    const catalogoEstadios = Array.isArray(options.catalogoEstadios) ? options.catalogoEstadios : [];
+
+    catalogoEstadios.forEach((estadio, indice) => {
+      const clave = this.claveMatriz(estadio.value, estadio.label, indice);
+      estadiosPorClave.set(clave, {
+        clave,
+        nombre: this.valor(estadio.label) || 'Estadio sin nombre',
+        orden: this.ordenEstadio(estadio.value, indice),
+      });
+      estadios.push(estadiosPorClave.get(clave));
+    });
+
+    catalogoPlagas.forEach((plaga, indice) => {
+      const clave = this.claveMatriz(plaga.value, plaga.label, indice);
+      const fila = this.crearFilaMatriz(plaga, indice);
+      filasPorClave.set(clave, fila);
+      filas.push(fila);
+    });
 
     plagas.forEach((plaga, indicePlaga) => {
       const clavePlaga = this.claveMatriz(plaga.idPlaga, plaga.nombrePlaga, indicePlaga);
       let fila = filasPorClave.get(clavePlaga);
 
       if (!fila) {
-        fila = {
-          plaga: this.valor(plaga.nombrePlaga) || 'Plaga sin nombre',
-          estadios: new Map(),
-          totalViable: 0,
-          totalNoViable: 0,
-          totalGeneral: 0,
-        };
+        fila = this.crearFilaMatriz(plaga, filas.length);
         filasPorClave.set(clavePlaga, fila);
         filas.push(fila);
       }
+
+      fila.tieneResultado = true;
+      fila.tipoRegistro = this.valor(plaga.tipoRegistro) || fila.tipoRegistro;
+      fila.detalleTexto = this.valor(plaga.detalleTexto) || fila.detalleTexto;
+      fila.observacion = this.valor(plaga.observacion) || fila.observacion;
 
       (Array.isArray(plaga.conteos) ? plaga.conteos : []).forEach((conteo, indiceConteo) => {
         const claveEstadio = this.claveMatriz(conteo.idEstadio, conteo.estadio, indiceConteo);
@@ -312,9 +558,38 @@ class MonitoreoPdfService {
     });
 
     estadios.sort((a, b) => a.orden - b.orden);
+    if (catalogoPlagas.length > 0) {
+      filas.sort((a, b) => a.orden - b.orden);
+    }
     const layout = this.requiereHorizontal(estadios.length) ? 'landscape' : 'portrait';
 
-    return { estadios, filas, totales, layout };
+    return {
+      estadios,
+      filas,
+      totales,
+      layout,
+      estadoResultado: detalle.estadoResultado,
+    };
+  }
+
+  crearFilaMatriz(plaga, indice) {
+    return {
+      plaga: this.valor(plaga.nombrePlaga || plaga.label) || 'Plaga sin nombre',
+      estadios: new Map(),
+      totalViable: 0,
+      totalNoViable: 0,
+      totalGeneral: 0,
+      tipoRegistro: this.valor(plaga.tipoRegistro || plaga.tipo_registro),
+      detalleTexto: this.valor(plaga.detalleTexto || plaga.detalle_texto),
+      observacion: this.valor(plaga.observacion),
+      tieneResultado: false,
+      orden: this.ordenPlaga(plaga.idPlaga || plaga.value, indice),
+    };
+  }
+
+  ordenPlaga(idPlaga, indice) {
+    const orden = Number(idPlaga);
+    return Number.isFinite(orden) ? orden : Number.MAX_SAFE_INTEGER + indice;
   }
 
   claveMatriz(id, nombre, indice) {
@@ -347,8 +622,8 @@ class MonitoreoPdfService {
     return anchoMinimo > anchoRetrato;
   }
 
-  agregarMatrizResultados(doc, matriz) {
-    const diseno = this.obtenerDisenoMatriz(doc, matriz);
+  agregarMatrizResultados(doc, matriz, area = {}) {
+    const diseno = this.obtenerDisenoMatriz(doc, matriz, area);
     this.dibujarEncabezadoMatriz(doc, matriz, diseno);
 
     matriz.filas.forEach((fila) => {
@@ -356,16 +631,19 @@ class MonitoreoPdfService {
       this.asegurarEspacioMatriz(doc, altura, matriz, diseno);
       this.dibujarFilaMatriz(doc, fila, matriz, diseno, false);
     });
+
+    return doc.y;
   }
 
-  obtenerDisenoMatriz(doc, matriz) {
-    const ancho = this.anchoUtil(doc);
+  obtenerDisenoMatriz(doc, matriz, area = {}) {
+    const ancho = area.width || this.anchoUtil(doc);
     const mostrarTotalesEstado = matriz.estadios.length <= 8;
     const anchoTotales = mostrarTotalesEstado ? 126 : 52;
-    const anchoPlaga = doc.page.width > doc.page.height ? 136 : 116;
+    const anchoPlaga = area.anchoPlaga || (doc.page.width > doc.page.height ? 136 : 116);
     const anchoEstadio = (ancho - anchoPlaga - anchoTotales) / matriz.estadios.length;
 
     return {
+      x: area.x === undefined ? doc.page.margins.left : area.x,
       anchoPlaga,
       anchoEstadio,
       anchoSubcolumna: anchoEstadio / 2,
@@ -378,7 +656,7 @@ class MonitoreoPdfService {
   }
 
   dibujarEncabezadoMatriz(doc, matriz, diseno) {
-    const x = doc.page.margins.left;
+    const x = diseno.x;
     const altoSubencabezado = 19;
     const altoEncabezado = Math.max(24, ...matriz.estadios.map((estadio) => doc.font('Helvetica-Bold')
       .fontSize(diseno.headerFontSize)
@@ -465,14 +743,14 @@ class MonitoreoPdfService {
     const altura = this.alturaFilaMatriz(doc, fila, matriz, diseno);
     const y = doc.y;
     const fill = esTotal ? COLORS.soft : COLORS.white;
-    this.dibujarCeldaMatriz(doc, fila.plaga, doc.page.margins.left, y, diseno.anchoPlaga, altura, {
+    this.dibujarCeldaMatriz(doc, fila.plaga, diseno.x, y, diseno.anchoPlaga, altura, {
       fill,
       bold: esTotal,
       fontSize: diseno.fontSize,
       align: 'left',
     });
 
-    let cellX = doc.page.margins.left + diseno.anchoPlaga;
+    let cellX = diseno.x + diseno.anchoPlaga;
     matriz.estadios.forEach((estadio) => {
       this.dibujarCeldaMatriz(doc, this.textoCeldaMatriz(fila, estadio.clave, 'viable'), cellX, y, diseno.anchoSubcolumna, altura, {
         fill,
@@ -491,14 +769,14 @@ class MonitoreoPdfService {
     });
 
     if (diseno.mostrarTotalesEstado) {
-      this.dibujarCeldaMatriz(doc, this.formatearCantidad(fila.totalViable), cellX, y, 42, altura, {
+      this.dibujarCeldaMatriz(doc, this.textoTotalMatriz(fila, matriz, 'totalViable'), cellX, y, 42, altura, {
         fill: esTotal ? COLORS.viable : COLORS.white,
         bold: esTotal,
         fontSize: diseno.fontSize,
         color: COLORS.primaryDark,
         align: 'right',
       });
-      this.dibujarCeldaMatriz(doc, this.formatearCantidad(fila.totalNoViable), cellX + 42, y, 42, altura, {
+      this.dibujarCeldaMatriz(doc, this.textoTotalMatriz(fila, matriz, 'totalNoViable'), cellX + 42, y, 42, altura, {
         fill: esTotal ? COLORS.noViable : COLORS.white,
         bold: esTotal,
         fontSize: diseno.fontSize,
@@ -507,7 +785,7 @@ class MonitoreoPdfService {
       });
       cellX += 84;
     }
-    this.dibujarCeldaMatriz(doc, this.formatearCantidad(fila.totalGeneral), cellX, y, 42, altura, {
+    this.dibujarCeldaMatriz(doc, this.textoTotalMatriz(fila, matriz, 'totalGeneral'), cellX, y, 42, altura, {
       fill,
       bold: esTotal,
       fontSize: diseno.fontSize,
@@ -524,6 +802,14 @@ class MonitoreoPdfService {
   textoCeldaMatriz(fila, claveEstadio, estado) {
     const cantidad = this.valorCeldaMatriz(fila, claveEstadio, estado);
     return cantidad === null ? '—' : this.formatearCantidad(cantidad);
+  }
+
+  textoTotalMatriz(fila, matriz, propiedad) {
+    if (matriz.estadoResultado === 'PENDIENTE' && !fila.tieneResultado) {
+      return '—';
+    }
+
+    return this.formatearCantidad(fila[propiedad]);
   }
 
   formatearCantidad(cantidad) {

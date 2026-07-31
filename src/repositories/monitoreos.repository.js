@@ -1021,6 +1021,153 @@ class MonitoreosRepository {
     };
   }
 
+  async obtenerDatosReporteGeneral(filtros) {
+    const pool = await poolPromise;
+    const result = await pool.request()
+      .input('idFundo', sql.Int, filtros.idFundo || null)
+      .input('idCampo', sql.Int, filtros.idCampo || null)
+      .input('idVariedad', sql.Int, filtros.idVariedad || null)
+      .input('idCuartel', sql.Int, filtros.idCuartel || null)
+      .input('fechaDesde', sql.Date, filtros.fechaDesde || null)
+      .input('fechaHasta', sql.Date, filtros.fechaHasta || null)
+      .input('idEstructura', sql.Int, filtros.idEstructura || null)
+      .input('idPlaga', sql.Int, filtros.idPlaga || null)
+      .input('tipoPlaga', sql.VarChar(20), filtros.tipoPlaga || null)
+      .input('estadoResultado', sql.VarChar(20), filtros.estadoResultado || null)
+      .query(`
+        SELECT
+          m.id_muestreo,
+          m.numero_muestreo,
+          m.fecha_muestreo,
+          m.fecha_revision_muestra,
+          m.fecha_solicitud_muestra,
+          m.fecha_recepcion_muestra,
+          m.cant_unidades_muestreadas,
+          m.observacion_general,
+          m.estado_resultado,
+          m.observacion_resultado,
+          m.fecha_resultado,
+          m.fecha_creacion,
+          m.fecha_modificacion,
+          m.id_usuario_creacion,
+          m.id_usuario_resultado,
+          m.id_muestrador,
+          m.id_estadofenologico,
+          m.horas_frio_acumuladas,
+          m.dias_grado_acumulados,
+          m.estacion_meteo_uuid,
+          LTRIM(RTRIM(ISNULL(m.nombre_estacion_meteo, ''))) AS nombre_estacion_meteo,
+          m.fecha_corte_agroclima,
+          m.semana_iso_corte,
+          m.temporada_agroclima,
+          m.agroclima_observacion,
+          LTRIM(RTRIM(ISNULL(uc.nombre, ''))) AS nombre_usuario_creacion,
+          LTRIM(RTRIM(ISNULL(ur.nombre, ''))) AS nombre_usuario_resultado,
+          LTRIM(RTRIM(ISNULL(mm.nombre_muestrador, ''))) AS nombre_muestreador,
+          LTRIM(RTRIM(ISNULL(ef.nom_estadofenologico, ''))) AS nombre_estado_fenologico,
+          e.id_estructura,
+          LTRIM(RTRIM(e.nombre_estructura)) AS nombre_estructura,
+          om.id_origen_muestra,
+          om.id_catalogo_sdp,
+          gc.GEN_CUARTEL AS gen_cuartel,
+          COALESCE(LTRIM(RTRIM(gc.CODIGO)), LTRIM(RTRIM(mb.cuartel))) AS codigo_cuartel,
+          COALESCE(LTRIM(RTRIM(f.Nombre)), LTRIM(RTRIM(mb.fundo))) AS nombre_fundo,
+          COALESCE(LTRIM(RTRIM(c.Nombre)), LTRIM(RTRIM(mb.nombre_productor))) AS nombre_campo,
+          COALESCE(LTRIM(RTRIM(v.Nombre)), LTRIM(RTRIM(mb.variedad))) AS nombre_variedad,
+          COALESCE(rel.sdp, mb.sdp) AS sdp,
+          COALESCE(rel.csg, mb.codigo_sag) AS csg,
+          COALESCE(rel.trazabilidad, mb.codigo_trazabilidad) AS trazabilidad,
+          rp.id_resultado_plaga,
+          rp.id_plaga,
+          rp.detalle_texto,
+          rp.cantidad_total,
+          rp.observacion,
+          rp.fecha_creacion AS fecha_resultado_plaga,
+          LTRIM(RTRIM(p.nombre_plaga)) AS nombre_plaga,
+          LTRIM(RTRIM(ISNULL(p.nombre_cientifico, ''))) AS nombre_cientifico,
+          LTRIM(RTRIM(ISNULL(p.tipo_registro, ''))) AS tipo_registro,
+          p.es_cuarentenaria,
+          rc.id_resultado_conteo,
+          rc.id_estadio,
+          LTRIM(RTRIM(est.nombre_estadio)) AS nombre_estadio,
+          rc.id_estado_ejemplar,
+          LTRIM(RTRIM(ee.nombre_estado)) AS nombre_estado,
+          rc.cantidad
+        FROM dbo.MONIPLA_MUESTREO m
+        INNER JOIN dbo.MONIPLA_ORIGEN_MUESTRA om
+          ON om.id_origen_muestra = m.id_origen_muestra
+        LEFT JOIN dbo.GEN_CUARTEL gc
+          ON gc.GEN_CUARTEL = om.gen_cuartel
+        LEFT JOIN dbo.GEN_FUNDO f
+          ON f.Gen_Fundo = gc.GEN_FUNDO
+        LEFT JOIN dbo.GEN_CAMPO c
+          ON c.Gen_Campo = gc.GEN_CAMPO
+        LEFT JOIN dbo.GEN_VARIEDAD v
+          ON v.gen_variedad = gc.GEN_VARIEDAD
+        LEFT JOIN dbo.MONIPLA_CATALOGO_SDP_MB mb
+          ON mb.id_catalogo_sdp = om.id_catalogo_sdp
+        INNER JOIN dbo.MONIPLA_ESTRUCTURA e
+          ON e.id_estructura = m.id_estructura
+        LEFT JOIN dbo.MONIPLA_REL_CUARTEL_SDP rel
+          ON rel.id_rel_cuartel_sdp = om.id_rel_cuartel_sdp
+        LEFT JOIN dbo.usuarios_sistema uc
+          ON uc.id = m.id_usuario_creacion
+        LEFT JOIN dbo.usuarios_sistema ur
+          ON ur.id = m.id_usuario_resultado
+        LEFT JOIN dbo.MONIPLA_MUESTRADOR mm
+          ON mm.id_muestrador = m.id_muestrador
+        LEFT JOIN dbo.estado_fenologico ef
+          ON ef.id_estadofenologico = m.id_estadofenologico
+        LEFT JOIN dbo.MONIPLA_RESULTADO_PLAGA rp
+          ON rp.id_muestreo = m.id_muestreo
+        LEFT JOIN dbo.MONIPLA_PLAGA p
+          ON p.id_plaga = rp.id_plaga
+        LEFT JOIN dbo.MONIPLA_RESULTADO_CONTEO rc
+          ON rc.id_resultado_plaga = rp.id_resultado_plaga
+        LEFT JOIN dbo.MONIPLA_ESTADIO est
+          ON est.id_estadio = rc.id_estadio
+        LEFT JOIN dbo.MONIPLA_ESTADO_EJEMPLAR ee
+          ON ee.id_estado_ejemplar = rc.id_estado_ejemplar
+        WHERE (@idFundo IS NULL OR COALESCE(gc.GEN_FUNDO, mb.gen_fundo) = @idFundo)
+          AND (@idCampo IS NULL OR COALESCE(gc.GEN_CAMPO, mb.gen_campo) = @idCampo)
+          AND (@idVariedad IS NULL OR COALESCE(gc.GEN_VARIEDAD, mb.gen_variedad) = @idVariedad)
+          AND (@idCuartel IS NULL OR COALESCE(gc.GEN_CUARTEL, mb.id_catalogo_sdp) = @idCuartel)
+          AND (@fechaDesde IS NULL OR m.fecha_muestreo >= @fechaDesde)
+          AND (@fechaHasta IS NULL OR m.fecha_muestreo <= @fechaHasta)
+          AND (@idEstructura IS NULL OR m.id_estructura = @idEstructura)
+          AND (@estadoResultado IS NULL OR m.estado_resultado = @estadoResultado)
+          AND (
+            @idPlaga IS NULL
+            OR EXISTS (
+              SELECT 1
+              FROM dbo.MONIPLA_RESULTADO_PLAGA rpFiltro
+              WHERE rpFiltro.id_muestreo = m.id_muestreo
+                AND rpFiltro.id_plaga = @idPlaga
+            )
+          )
+          AND (
+            @tipoPlaga IS NULL
+            OR EXISTS (
+              SELECT 1
+              FROM dbo.MONIPLA_RESULTADO_PLAGA rpTipo
+              INNER JOIN dbo.MONIPLA_PLAGA pTipo
+                ON pTipo.id_plaga = rpTipo.id_plaga
+              WHERE rpTipo.id_muestreo = m.id_muestreo
+                AND pTipo.tipo_registro = @tipoPlaga
+            )
+          )
+        ORDER BY
+          m.fecha_muestreo DESC,
+          m.numero_muestreo DESC,
+          m.id_muestreo DESC,
+          rp.id_plaga ASC,
+          rc.id_estadio ASC,
+          rc.id_estado_ejemplar ASC
+      `);
+
+    return result.recordset;
+  }
+
   async obtenerDetalleMuestreo(idMuestreo) {
     const pool = await poolPromise;
 
@@ -1035,6 +1182,7 @@ class MonitoreosRepository {
           m.fecha_revision_muestra,
           m.fecha_solicitud_muestra,
           m.fecha_recepcion_muestra,
+          m.cant_unidades_muestreadas,
           m.observacion_general,
           m.estado_resultado,
           m.observacion_resultado,

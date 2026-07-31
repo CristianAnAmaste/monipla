@@ -72,6 +72,7 @@ router.post(
   monitoreosController.eliminar
 );
 router.get('/monitoreos/imagenes/:idImagen', ensureAuthenticated, monitoreosController.verImagen);
+router.get('/monitoreos/reporte-general/pdf', ensureAuthenticated, monitoreosController.descargarPdfGeneral);
 router.get('/monitoreos/:idMuestreo/pdf', ensureAuthenticated, monitoreosController.descargarPdf);
 router.get('/monitoreos/:idMuestreo/detalle-parcial', ensureAuthenticated, monitoreosController.detalleParcial);
 router.get('/monitoreos/:idMuestreo/detalle', ensureAuthenticated, monitoreosController.detalle);

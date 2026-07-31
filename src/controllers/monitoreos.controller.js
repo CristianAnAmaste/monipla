@@ -16,6 +16,7 @@ class MonitoreosController {
     this.eliminar = this.eliminar.bind(this);
     this.detalleParcial = this.detalleParcial.bind(this);
     this.descargarPdf = this.descargarPdf.bind(this);
+    this.descargarPdfGeneral = this.descargarPdfGeneral.bind(this);
     this.verImagen = this.verImagen.bind(this);
     this.detalle = this.detalle.bind(this);
     this.editar = this.editar.bind(this);
@@ -428,6 +429,39 @@ class MonitoreosController {
         contentView: '../monitoreos/placeholder',
         pageTitle: 'PDF no disponible',
         pageMessage: 'No fue posible generar el PDF del monitoreo solicitado.',
+      });
+    }
+  }
+
+  async descargarPdfGeneral(req, res) {
+    try {
+      const pdf = await this.monitoreosService.generarPdfGeneralMonitoreos(req.query);
+
+      console.info('[MONIPLA][PDF_GENERAL][OK]', {
+        filtros: req.query,
+        totalMonitoreos: pdf.totalMonitoreos,
+      });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${pdf.filename}"`);
+      res.setHeader('Content-Length', pdf.buffer.length);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+
+      return res.send(pdf.buffer);
+    } catch (error) {
+      const status = error.message === 'FILTROS_REPORTE_INVALIDOS' ? 400 : 500;
+      console.error('[MONIPLA][PDF_GENERAL][ERROR]', {
+        filtros: req.query,
+        error: error.message,
+      });
+
+      return res.status(status).render('layouts/main', {
+        title: 'Reporte general de monitoreo de plagas',
+        contentView: '../monitoreos/placeholder',
+        pageTitle: 'Reporte no disponible',
+        pageMessage: status === 400
+          ? 'Los filtros del historial no son validos para generar el reporte.'
+          : 'No fue posible generar el reporte general de monitoreos.',
       });
     }
   }

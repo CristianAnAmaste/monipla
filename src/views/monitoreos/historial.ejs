@@ -31,6 +31,19 @@
     params.set('pagina', page);
     return `/monitoreos/historial?${params.toString()}`;
   };
+  const buildPdfGeneralUrl = () => {
+    const params = new URLSearchParams();
+
+    filtrosRetorno.forEach((key) => {
+      const value = values && values[key];
+      if (value && key !== 'pagina') {
+        params.set(key, value);
+      }
+    });
+
+    const query = params.toString();
+    return `/monitoreos/reporte-general/pdf${query ? `?${query}` : ''}`;
+  };
 %>
 
 <section class="page-header">
@@ -169,6 +182,7 @@
       <strong><%= totalRegistros %> monitoreos encontrados</strong>
       <p><%= totalRegistros === 0 ? 'Sin registros para los filtros seleccionados.' : `Mostrando ${desdeRegistro}-${hastaRegistro}` %></p>
     </div>
+    <a class="button button-secondary button-small" href="<%= buildPdfGeneralUrl() %>">PDF general</a>
   </div>
 
   <div class="table-wrap historial-table-wrapper">
