@@ -38,6 +38,7 @@ class MonitoreosController {
         opciones: {
           fundos: [],
           estructuras: [],
+          lugaresMuestra: [],
           estadosFenologicos: [],
           muestreadores: [],
         },
@@ -78,6 +79,7 @@ class MonitoreosController {
           opciones: {
             fundos: [],
             estructuras: [],
+            lugaresMuestra: [],
             estadosFenologicos: [],
             muestreadores: [],
           },

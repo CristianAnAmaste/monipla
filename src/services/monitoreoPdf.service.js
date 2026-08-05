@@ -256,7 +256,8 @@ class MonitoreoPdfService {
       ['SPD / SDP', info.sdp],
       ['CSG', info.csg],
       ['Trazabilidad', info.trazabilidad],
-    ]);
+      ['Tipo de muestra', info.nombreLugarMuestra || '-'],
+    ], { incluirGuion: true });
 
     if (this.tieneValor(info.observacionGeneral)) {
       this.agregarTexto(doc, `Observación general: ${this.valor(info.observacionGeneral)}`);
@@ -356,7 +357,9 @@ class MonitoreoPdfService {
   agregarBloqueReporteGeneral(doc, detalle, matriz) {
     const x = doc.page.margins.left;
     const width = this.anchoUtil(doc);
-    const alturaMinima = 224;
+    const anchoCabecera = Math.round(width * 0.36);
+    const alturaObservacion = this.calcularAlturaObservacionGeneralReporte(doc, detalle, anchoCabecera);
+    const alturaMinima = 224 + Math.max(0, alturaObservacion - 24);
 
     if (!this.hayEspacio(doc, alturaMinima) && doc.y > doc.page.margins.top + 4) {
       doc.addPage();
@@ -383,7 +386,6 @@ class MonitoreoPdfService {
 
     const top = y + 30;
     const gap = 10;
-    const anchoCabecera = Math.round(width * 0.36);
     const anchoMatriz = width - anchoCabecera - gap;
     const finCabecera = this.dibujarCabeceraReporteGeneral(doc, detalle, x, top, anchoCabecera);
 
@@ -394,7 +396,6 @@ class MonitoreoPdfService {
       anchoPlaga: 112,
     });
     doc.y = Math.max(finCabecera, finMatriz) + 5;
-    this.agregarNotasReporteGeneral(doc, matriz);
     doc.y += 7;
   }
 
@@ -406,9 +407,10 @@ class MonitoreoPdfService {
       ['Variedad', info.variedad],
       ['Cuartel', info.cuartel],
       ['Muestrador', info.muestreador],
+      ['Ingresado por', info.nombreUsuarioCreacion, { incluirGuion: true }],
       ['SDP', info.sdp],
       ['CSG', info.csg],
-      ['Unidades revisadas', info.cantUnidadesMuestreadas],
+      ['Tipo de muestra', info.nombreLugarMuestra, { incluirGuion: true }],
       ['Estado fenologico', info.estadoFenologico],
       ['Trazabilidad', info.trazabilidad],
     ];
@@ -416,7 +418,7 @@ class MonitoreoPdfService {
     const colWidth = (width - gap) / 2;
     let bottom = y;
 
-    items.forEach(([label, value], index) => {
+    items.forEach(([label, value, options = {}], index) => {
       const column = index % 2;
       const row = Math.floor(index / 2);
       const cellX = x + (column * (colWidth + gap));
@@ -428,15 +430,20 @@ class MonitoreoPdfService {
       doc.font('Helvetica')
         .fontSize(8.3)
         .fillColor(COLORS.text)
-        .text(this.valorReporte(value), cellX, cellY + 9, { width: colWidth, lineGap: 0 });
+        .text(
+          options.incluirGuion ? (this.valor(value) || '-') : this.valorReporte(value),
+          cellX,
+          cellY + 9,
+          { width: colWidth, lineGap: 0 }
+        );
       bottom = Math.max(bottom, cellY + 23);
     });
 
-    const observacion = this.valorReporte(info.observacionGeneral);
+    const observacion = this.valor(info.observacionGeneral) || 'Sin Observaciones';
     doc.font('Helvetica-Bold')
       .fontSize(7)
       .fillColor(COLORS.muted)
-      .text('Observacion general:', x, bottom + 3, { width });
+      .text('Observación general:', x, bottom + 3, { width });
     const observacionY = bottom + 12;
     const observacionHeight = doc.font('Helvetica')
       .fontSize(8.3)
@@ -447,37 +454,16 @@ class MonitoreoPdfService {
     return observacionY + Math.max(12, observacionHeight);
   }
 
-  agregarNotasReporteGeneral(doc, matriz) {
-    const notas = matriz.filas
-      .map((fila) => this.obtenerNotaReporteGeneral(fila))
-      .filter(Boolean);
+  calcularAlturaObservacionGeneralReporte(doc, detalle, width) {
+    const observacion = this.valor((detalle.cabecera || {}).observacionGeneral) || 'Sin Observaciones';
+    const alturaEtiqueta = doc.font('Helvetica-Bold')
+      .fontSize(7)
+      .heightOfString('Observación general:', { width, lineGap: 0 });
+    const alturaTexto = doc.font('Helvetica')
+      .fontSize(8.3)
+      .heightOfString(observacion, { width, lineGap: 0 });
 
-    if (!notas.length) {
-      return;
-    }
-
-    this.ensureSpace(doc, 20);
-    doc.font('Helvetica')
-      .fontSize(7.5)
-      .fillColor(COLORS.muted)
-      .text(notas.join(' | '), doc.page.margins.left, doc.y, {
-        width: this.anchoUtil(doc),
-        lineGap: 0,
-      });
-  }
-
-  obtenerNotaReporteGeneral(fila) {
-    const detalle = fila.detalleTexto || fila.observacion;
-
-    if (fila.tipoRegistro === 'TEXTO' && detalle) {
-      return `${fila.plaga} (texto): ${detalle}`;
-    }
-
-    if (fila.tipoRegistro === 'PRESENCIA' && fila.tieneResultado) {
-      return detalle ? `${fila.plaga} (presencia): ${detalle}` : `${fila.plaga}: registro de presencia sin conteos.`;
-    }
-
-    return detalle ? `${fila.plaga}: ${detalle}` : '';
+    return 3 + alturaEtiqueta + Math.max(12, alturaTexto);
   }
 
   valorReporte(value) {
@@ -1008,8 +994,10 @@ class MonitoreoPdfService {
       });
   }
 
-  agregarKeyValuesEnColumnas(doc, rows) {
-    const validRows = rows.filter((row) => this.tieneValor(row[1]));
+  agregarKeyValuesEnColumnas(doc, rows, { incluirGuion = false } = {}) {
+    const validRows = rows.filter((row) => (
+      this.tieneValor(row[1]) || (incluirGuion && String(row[1] ?? '').trim() === '-')
+    ));
     if (!validRows.length) return;
 
     const x = doc.page.margins.left;
@@ -1019,7 +1007,13 @@ class MonitoreoPdfService {
 
     for (let index = 0; index < validRows.length; index += 2) {
       const pair = validRows.slice(index, index + 2);
-      const heights = pair.map(([label, value]) => this.alturaKeyValue(doc, label, value, colWidth));
+      const heights = pair.map(([label, value]) => this.alturaKeyValue(
+        doc,
+        label,
+        value,
+        colWidth,
+        incluirGuion
+      ));
       const rowHeight = Math.max(...heights, 22);
       this.ensureSpace(doc, rowHeight + 2);
       const y = doc.y;
@@ -1036,7 +1030,7 @@ class MonitoreoPdfService {
         doc.font('Helvetica')
           .fontSize(11)
           .fillColor(COLORS.text)
-          .text(this.valor(value), colX, y + 10, {
+          .text(this.valorKeyValue(value, incluirGuion), colX, y + 10, {
             width: colWidth,
             lineGap: 0,
           });
@@ -1046,17 +1040,24 @@ class MonitoreoPdfService {
     }
   }
 
-  alturaKeyValue(doc, label, value, width) {
+  alturaKeyValue(doc, label, value, width, incluirGuion = false) {
     const labelHeight = doc.font('Helvetica-Bold').fontSize(9).heightOfString(`${label}:`, {
       width,
       lineGap: 0,
     });
-    const valueHeight = doc.font('Helvetica').fontSize(11).heightOfString(this.valor(value), {
+    const valueHeight = doc.font('Helvetica').fontSize(11).heightOfString(
+      this.valorKeyValue(value, incluirGuion),
+      {
       width,
       lineGap: 0,
-    });
+      }
+    );
 
     return labelHeight + valueHeight;
+  }
+
+  valorKeyValue(value, incluirGuion = false) {
+    return incluirGuion && String(value ?? '').trim() === '-' ? '-' : this.valor(value);
   }
 
   agregarBadges(doc, items) {

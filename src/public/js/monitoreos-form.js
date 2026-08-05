@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const campoSelect = document.getElementById('genCampo');
   const variedadSelect = document.getElementById('genVariedad');
   const cuartelSelect = document.getElementById('idCatalogoSdp');
+  const lugarMuestraSelect = document.getElementById('id_lugar_muestra');
   const errorBox = document.getElementById('monitoreo-combos-error');
   const confirmacionInput = document.getElementById('confirmacionResumen');
   const modal = document.getElementById('monitoreo-confirmacion-modal');
@@ -140,6 +141,14 @@ document.addEventListener('DOMContentLoaded', () => {
     node.textContent = value || '-';
   };
 
+  const obtenerTextoSeleccionado = (select) => {
+    if (!select || select.selectedIndex < 0) {
+      return '-';
+    }
+
+    return select.options[select.selectedIndex].textContent.trim() || '-';
+  };
+
   const renderResumen = (resumen) => {
     setResumenText('fundo', resumen.ubicacion?.fundo);
     setResumenText('campo', resumen.ubicacion?.campo);
@@ -149,6 +158,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setResumenText('csg', resumen.resolucion?.csg);
     setResumenText('trazabilidad', resumen.resolucion?.trazabilidad);
     setResumenText('estructura', resumen.estructura);
+    setResumenText('tipoMuestra', obtenerTextoSeleccionado(lugarMuestraSelect));
     setResumenText('fechaSolicitudMuestra', formatFecha(resumen.fechas?.solicitudMuestra));
     setResumenText('fechaRecepcionMuestra', formatFecha(resumen.fechas?.recepcionMuestra));
     setResumenText('fechaRevisionMuestra', formatFecha(resumen.fechas?.revisionMuestra));

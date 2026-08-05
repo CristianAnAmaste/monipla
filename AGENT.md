@@ -157,17 +157,6 @@ Tablas MONIPLA vigentes:
 - En resultados cerrados, mostrar estado informativo y ocultar formulario.
 - Mantener textos compactos y legibles con nombres agricolas largos.
 
-## 10. Pendientes principales
-
-- Estabilizar detalle visual con datos reales y nombres largos.
-- PDF individual de monitoreo.
-- PDF general o reporte consolidado.
-- Edicion de resultados.
-- Eliminacion o anulacion, si corresponde funcionalmente.
-- Mejoras de auditoria.
-- Permisos finos por perfil, si aplica.
-- Pruebas automatizadas de services y repositories.
-- Pruebas manuales de imagenes reales de terreno.
 
 ## 11. Que NO hacer sin aprobacion
 

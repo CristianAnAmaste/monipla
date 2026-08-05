@@ -104,6 +104,21 @@ class MonitoreosRepository {
     return result.recordset;
   }
 
+  async findLugaresMuestraActivos() {
+    const pool = await poolPromise;
+
+    const result = await pool.request().query(`
+      SELECT
+        id_lugar_muestra AS value,
+        LTRIM(RTRIM(nombre_lugar_muestra)) AS label
+      FROM dbo.MONIPLA_LUGAR_MUESTRA
+      WHERE activo = 1
+      ORDER BY id_lugar_muestra ASC
+    `);
+
+    return result.recordset;
+  }
+
   async findEstadosFenologicosActivos() {
     const pool = await poolPromise;
 
@@ -147,6 +162,24 @@ class MonitoreosRepository {
           activo
         FROM dbo.MONIPLA_ESTRUCTURA
         WHERE id_estructura = @idEstructura
+      `);
+
+    return result.recordset[0] || null;
+  }
+
+  async findLugarMuestraById(idLugarMuestra) {
+    const pool = await poolPromise;
+
+    const result = await pool
+      .request()
+      .input('idLugarMuestra', sql.Int, idLugarMuestra)
+      .query(`
+        SELECT TOP 1
+          id_lugar_muestra,
+          nombre_lugar_muestra,
+          activo
+        FROM dbo.MONIPLA_LUGAR_MUESTRA
+        WHERE id_lugar_muestra = @idLugarMuestra
       `);
 
     return result.recordset[0] || null;
@@ -280,6 +313,7 @@ class MonitoreosRepository {
       .input('fechaMuestreo', sql.Date, data.fechaMuestreo)
       .input('fechaRevisionMuestra', sql.Date, data.fechaRevisionMuestra)
       .input('idEstructura', sql.Int, data.idEstructura)
+      .input('idLugarMuestra', sql.Int, data.idLugarMuestra)
       .input('cantUnidadesMuestreadas', sql.Int, null)
       .input('observacionGeneral', sql.VarChar(500), data.observacionGeneral || null)
       .input('idUsuarioCreacion', sql.Int, data.idUsuarioCreacion)
@@ -302,6 +336,7 @@ class MonitoreosRepository {
           fecha_muestreo,
           fecha_revision_muestra,
           id_estructura,
+          id_lugar_muestra,
           cant_unidades_muestreadas,
           observacion_general,
           id_usuario_creacion,
@@ -330,6 +365,7 @@ class MonitoreosRepository {
           @fechaMuestreo,
           @fechaRevisionMuestra,
           @idEstructura,
+          @idLugarMuestra,
           @cantUnidadesMuestreadas,
           @observacionGeneral,
           @idUsuarioCreacion,
@@ -445,6 +481,8 @@ class MonitoreosRepository {
           m.agroclima_observacion,
           e.id_estructura,
           LTRIM(RTRIM(e.nombre_estructura)) AS nombre_estructura,
+          m.id_lugar_muestra,
+          LTRIM(RTRIM(lm.nombre_lugar_muestra)) AS nombre_lugar_muestra,
           om.id_origen_muestra,
           om.id_catalogo_sdp,
           gc.GEN_CUARTEL AS gen_cuartel,
@@ -470,6 +508,8 @@ class MonitoreosRepository {
           ON mb.id_catalogo_sdp = om.id_catalogo_sdp
         INNER JOIN dbo.MONIPLA_ESTRUCTURA e
           ON e.id_estructura = m.id_estructura
+        LEFT JOIN dbo.MONIPLA_LUGAR_MUESTRA lm
+          ON lm.id_lugar_muestra = m.id_lugar_muestra
         LEFT JOIN dbo.MONIPLA_REL_CUARTEL_SDP rel
           ON rel.id_rel_cuartel_sdp = om.id_rel_cuartel_sdp
         WHERE m.id_muestreo = @idMuestreo
@@ -1067,6 +1107,8 @@ class MonitoreosRepository {
           LTRIM(RTRIM(ISNULL(ef.nom_estadofenologico, ''))) AS nombre_estado_fenologico,
           e.id_estructura,
           LTRIM(RTRIM(e.nombre_estructura)) AS nombre_estructura,
+          m.id_lugar_muestra,
+          LTRIM(RTRIM(lm.nombre_lugar_muestra)) AS nombre_lugar_muestra,
           om.id_origen_muestra,
           om.id_catalogo_sdp,
           gc.GEN_CUARTEL AS gen_cuartel,
@@ -1108,6 +1150,8 @@ class MonitoreosRepository {
           ON mb.id_catalogo_sdp = om.id_catalogo_sdp
         INNER JOIN dbo.MONIPLA_ESTRUCTURA e
           ON e.id_estructura = m.id_estructura
+        LEFT JOIN dbo.MONIPLA_LUGAR_MUESTRA lm
+          ON lm.id_lugar_muestra = m.id_lugar_muestra
         LEFT JOIN dbo.MONIPLA_REL_CUARTEL_SDP rel
           ON rel.id_rel_cuartel_sdp = om.id_rel_cuartel_sdp
         LEFT JOIN dbo.usuarios_sistema uc
@@ -1207,6 +1251,8 @@ class MonitoreosRepository {
           LTRIM(RTRIM(ISNULL(ef.nom_estadofenologico, ''))) AS nombre_estado_fenologico,
           e.id_estructura,
           LTRIM(RTRIM(e.nombre_estructura)) AS nombre_estructura,
+          m.id_lugar_muestra,
+          LTRIM(RTRIM(lm.nombre_lugar_muestra)) AS nombre_lugar_muestra,
           om.id_origen_muestra,
           om.id_catalogo_sdp,
           gc.GEN_CUARTEL AS gen_cuartel,
@@ -1232,6 +1278,8 @@ class MonitoreosRepository {
           ON mb.id_catalogo_sdp = om.id_catalogo_sdp
         INNER JOIN dbo.MONIPLA_ESTRUCTURA e
           ON e.id_estructura = m.id_estructura
+        LEFT JOIN dbo.MONIPLA_LUGAR_MUESTRA lm
+          ON lm.id_lugar_muestra = m.id_lugar_muestra
         LEFT JOIN dbo.MONIPLA_REL_CUARTEL_SDP rel
           ON rel.id_rel_cuartel_sdp = om.id_rel_cuartel_sdp
         LEFT JOIN dbo.usuarios_sistema uc
