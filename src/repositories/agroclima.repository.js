@@ -1,6 +1,81 @@
 const { poolPromise, sql } = require('../config/db');
 
 class AgroclimaRepository {
+  async listarMuestreosPendientesBackfill(idMuestreo = null) {
+    const request = await this.createRequest();
+
+    const result = await request
+      .input('idMuestreo', sql.Int, idMuestreo)
+      .query(`
+        SELECT
+          m.id_muestreo,
+          m.id_origen_muestra,
+          CONVERT(char(10), m.fecha_recepcion_muestra, 23) AS fecha_recepcion_muestra
+        FROM dbo.MONIPLA_MUESTREO m
+        WHERE m.fecha_recepcion_muestra IS NOT NULL
+          AND (@idMuestreo IS NULL OR m.id_muestreo = @idMuestreo)
+          AND (
+            m.fecha_corte_agroclima IS NULL
+            OR (
+              m.horas_frio_acumuladas IS NULL
+              AND m.dias_grado_acumulados IS NULL
+              AND (
+                m.agroclima_observacion IS NULL
+                OR LTRIM(RTRIM(m.agroclima_observacion)) = ''
+                OR UPPER(m.agroclima_observacion) LIKE '%ERROR%'
+                OR UPPER(m.agroclima_observacion) LIKE '%SIN DATOS%'
+              )
+            )
+          )
+        ORDER BY m.id_muestreo ASC
+      `);
+
+    return result.recordset;
+  }
+
+  async actualizarSnapshotSiPendienteBackfill(idMuestreo, snapshot) {
+    const request = await this.createRequest();
+
+    const result = await request
+      .input('idMuestreo', sql.Int, idMuestreo)
+      .input('horasFrioAcumuladas', sql.Decimal(10, 2), snapshot.horasFrioAcumuladas ?? null)
+      .input('diasGradoAcumulados', sql.Decimal(10, 2), snapshot.diasGradoAcumulados ?? null)
+      .input('estacionMeteoUuid', sql.UniqueIdentifier, snapshot.estacionMeteoUuid || null)
+      .input('nombreEstacionMeteo', sql.NVarChar(100), snapshot.nombreEstacionMeteo || null)
+      .input('fechaCorteAgroclima', sql.Date, snapshot.fechaCorteAgroclima || null)
+      .input('semanaIsoCorte', sql.TinyInt, snapshot.semanaIsoCorte ?? null)
+      .input('temporadaAgroclima', sql.VarChar(9), snapshot.temporadaAgroclima || null)
+      .input('agroclimaObservacion', sql.NVarChar(250), snapshot.agroclimaObservacion || null)
+      .query(`
+        UPDATE dbo.MONIPLA_MUESTREO
+        SET
+          horas_frio_acumuladas = @horasFrioAcumuladas,
+          dias_grado_acumulados = @diasGradoAcumulados,
+          estacion_meteo_uuid = @estacionMeteoUuid,
+          nombre_estacion_meteo = @nombreEstacionMeteo,
+          fecha_corte_agroclima = @fechaCorteAgroclima,
+          semana_iso_corte = @semanaIsoCorte,
+          temporada_agroclima = @temporadaAgroclima,
+          agroclima_observacion = @agroclimaObservacion
+        WHERE id_muestreo = @idMuestreo
+          AND (
+            fecha_corte_agroclima IS NULL
+            OR (
+              horas_frio_acumuladas IS NULL
+              AND dias_grado_acumulados IS NULL
+              AND (
+                agroclima_observacion IS NULL
+                OR LTRIM(RTRIM(agroclima_observacion)) = ''
+                OR UPPER(agroclima_observacion) LIKE '%ERROR%'
+                OR UPPER(agroclima_observacion) LIKE '%SIN DATOS%'
+              )
+            )
+          )
+      `);
+
+    return result.rowsAffected[0] || 0;
+  }
+
   async resolverEstacionPorOrigen(idOrigenMuestra, fechaMuestra, transaction = null) {
     const request = await this.createRequest(transaction);
 
