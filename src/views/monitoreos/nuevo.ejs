@@ -34,98 +34,114 @@
   <form id="monitoreo-form" class="form form-grid" action="/monitoreos" method="POST" autocomplete="off" novalidate>
     <input id="confirmacionResumen" name="confirmacionResumen" type="hidden" value="0">
 
-    <div class="form-group">
-      <label for="genFundo">Fundo</label>
-      <select id="genFundo" name="genFundo" data-selected="<%= values.genFundo %>" required>
-        <option value="">Seleccione un fundo</option>
-        <% opciones.fundos.forEach((item) => { %>
-          <option value="<%= item.value %>" <%= Number(values.genFundo) === Number(item.value) ? 'selected' : '' %>><%= item.label %></option>
-        <% }) %>
-      </select>
+    <div class="form-group-full monitoreo-ubicacion-grid">
+      <div class="form-group">
+        <label for="genFundo">Fundo</label>
+        <select id="genFundo" name="genFundo" data-selected="<%= values.genFundo %>" required>
+          <option value="">Seleccione un fundo</option>
+          <% opciones.fundos.forEach((item) => { %>
+            <option value="<%= item.value %>" <%= Number(values.genFundo) === Number(item.value) ? 'selected' : '' %>><%= item.label %></option>
+          <% }) %>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="genCampo">Campo / Productor</label>
+        <select id="genCampo" name="genCampo" data-selected="<%= values.genCampo %>" disabled required>
+          <option value="">Seleccione primero un fundo</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="genVariedad">Variedad</label>
+        <select id="genVariedad" name="genVariedad" data-selected="<%= values.genVariedad %>" disabled required>
+          <option value="">Seleccione primero un campo</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="idCatalogoSdp">Cuartel</label>
+        <select id="idCatalogoSdp" name="idCatalogoSdp" data-selected="<%= values.idCatalogoSdp %>" disabled required>
+          <option value="">Seleccione primero una variedad</option>
+        </select>
+      </div>
     </div>
 
-    <div class="form-group">
-      <label for="genCampo">Campo / Productor</label>
-      <select id="genCampo" name="genCampo" data-selected="<%= values.genCampo %>" disabled required>
-        <option value="">Seleccione primero un fundo</option>
-      </select>
+    <div class="form-group-full monitoreo-catalogos-grid">
+      <div class="form-group">
+        <label for="idEstructura">Estructura</label>
+        <select id="idEstructura" name="idEstructura" required>
+          <option value="">Seleccione una estructura</option>
+          <% opciones.estructuras.forEach((item) => { %>
+            <option value="<%= item.value %>" <%= Number(values.idEstructura) === Number(item.value) ? 'selected' : '' %>><%= item.label %></option>
+          <% }) %>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="id_lugar_muestra">Tipo de muestra</label>
+        <select id="id_lugar_muestra" name="id_lugar_muestra" required>
+          <option value="">Seleccione un tipo de muestra</option>
+          <% opciones.lugaresMuestra.forEach((item) => { %>
+            <option value="<%= item.value %>" <%= Number(values.idLugarMuestra) === Number(item.value) ? 'selected' : '' %>><%= item.label %></option>
+          <% }) %>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="id_estadofenologico">Estado fenologico</label>
+        <select id="id_estadofenologico" name="id_estadofenologico" required>
+          <option value="">Seleccione un estado fenologico</option>
+          <% opciones.estadosFenologicos.forEach((item) => { %>
+            <option value="<%= item.value %>" <%= Number(values.idEstadoFenologico) === Number(item.value) ? 'selected' : '' %>><%= item.label %></option>
+          <% }) %>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="id_muestreador">Muestreador</label>
+        <select id="id_muestreador" name="id_muestreador" required>
+          <option value="">Seleccione un muestreador</option>
+          <% opciones.muestreadores.forEach((item) => { %>
+            <option value="<%= item.value %>" <%= Number(values.idMuestreador) === Number(item.value) ? 'selected' : '' %>><%= item.label %></option>
+          <% }) %>
+        </select>
+      </div>
     </div>
 
-    <div class="form-group">
-      <label for="genVariedad">Variedad</label>
-      <select id="genVariedad" name="genVariedad" data-selected="<%= values.genVariedad %>" disabled required>
-        <option value="">Seleccione primero un campo</option>
-      </select>
-    </div>
+    <div class="form-group-full monitoreo-seguimiento-grid">
+      <div class="form-group">
+        <label for="fechaSolicitudMuestra">Fecha solicitud muestra</label>
+        <input
+          id="fechaSolicitudMuestra"
+          name="fechaSolicitudMuestra"
+          type="date"
+          value="<%= values.fechaSolicitudMuestra %>"
+          required
+        >
+      </div>
 
-    <div class="form-group">
-      <label for="idCatalogoSdp">Cuartel</label>
-      <select id="idCatalogoSdp" name="idCatalogoSdp" data-selected="<%= values.idCatalogoSdp %>" disabled required>
-        <option value="">Seleccione primero una variedad</option>
-      </select>
-    </div>
+      <div class="form-group">
+        <label for="fechaRecepcionMuestra">Fecha recepcion muestra</label>
+        <input
+          id="fechaRecepcionMuestra"
+          name="fechaRecepcionMuestra"
+          type="date"
+          value="<%= values.fechaRecepcionMuestra %>"
+          required
+        >
+      </div>
 
-    <div class="form-group">
-      <label for="idEstructura">Estructura</label>
-      <select id="idEstructura" name="idEstructura" required>
-        <option value="">Seleccione una estructura</option>
-        <% opciones.estructuras.forEach((item) => { %>
-          <option value="<%= item.value %>" <%= Number(values.idEstructura) === Number(item.value) ? 'selected' : '' %>><%= item.label %></option>
-        <% }) %>
-      </select>
-    </div>
-
-    <div class="form-group">
-      <label for="id_muestreador">Muestreador</label>
-      <select id="id_muestreador" name="id_muestreador" required>
-        <option value="">Seleccione un muestreador</option>
-        <% opciones.muestreadores.forEach((item) => { %>
-          <option value="<%= item.value %>" <%= Number(values.idMuestreador) === Number(item.value) ? 'selected' : '' %>><%= item.label %></option>
-        <% }) %>
-      </select>
-    </div>
-
-    <div class="form-group">
-      <label for="id_estadofenologico">Estado fenologico</label>
-      <select id="id_estadofenologico" name="id_estadofenologico" required>
-        <option value="">Seleccione un estado fenologico</option>
-        <% opciones.estadosFenologicos.forEach((item) => { %>
-          <option value="<%= item.value %>" <%= Number(values.idEstadoFenologico) === Number(item.value) ? 'selected' : '' %>><%= item.label %></option>
-        <% }) %>
-      </select>
-    </div>
-
-    <div class="form-group">
-      <label for="fechaSolicitudMuestra">Fecha solicitud muestra</label>
-      <input
-        id="fechaSolicitudMuestra"
-        name="fechaSolicitudMuestra"
-        type="date"
-        value="<%= values.fechaSolicitudMuestra %>"
-        required
-      >
-    </div>
-
-    <div class="form-group">
-      <label for="fechaRecepcionMuestra">Fecha recepcion muestra</label>
-      <input
-        id="fechaRecepcionMuestra"
-        name="fechaRecepcionMuestra"
-        type="date"
-        value="<%= values.fechaRecepcionMuestra %>"
-        required
-      >
-    </div>
-
-    <div class="form-group">
-      <label for="fechaRevisionMuestra">Fecha revision muestra</label>
-      <input
-        id="fechaRevisionMuestra"
-        name="fechaRevisionMuestra"
-        type="date"
-        value="<%= values.fechaRevisionMuestra %>"
-        required
-      >
+      <div class="form-group">
+        <label for="fechaRevisionMuestra">Fecha revision muestra</label>
+        <input
+          id="fechaRevisionMuestra"
+          name="fechaRevisionMuestra"
+          type="date"
+          value="<%= values.fechaRevisionMuestra %>"
+          required
+        >
+      </div>
     </div>
 
     <div class="form-group form-group-full">
@@ -200,6 +216,10 @@
           <div>
             <dt>Estructura</dt>
             <dd data-resumen="estructura">-</dd>
+          </div>
+          <div>
+            <dt>Tipo de muestra</dt>
+            <dd data-resumen="tipoMuestra">-</dd>
           </div>
         </dl>
       </section>

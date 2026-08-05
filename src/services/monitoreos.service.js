@@ -22,9 +22,10 @@ class MonitoreosService {
   }
 
   async getFormularioData(values = this.getValoresIniciales()) {
-    const [fundos, estructuras, estadosFenologicos, muestreadores] = await Promise.all([
+    const [fundos, estructuras, lugaresMuestra, estadosFenologicos, muestreadores] = await Promise.all([
       this.monitoreosRepository.findFondosDisponibles(),
       this.monitoreosRepository.findEstructurasActivas(),
+      this.monitoreosRepository.findLugaresMuestraActivos(),
       this.monitoreosRepository.findEstadosFenologicosActivos(),
       this.monitoreosRepository.findMuestreadoresActivos(),
     ]);
@@ -34,6 +35,7 @@ class MonitoreosService {
       opciones: {
         fundos,
         estructuras,
+        lugaresMuestra,
         estadosFenologicos,
         muestreadores,
       },
@@ -120,6 +122,7 @@ class MonitoreosService {
         fechaMuestreo: resolucion.values.fechaRevisionMuestra,
         fechaRevisionMuestra: resolucion.values.fechaRevisionMuestra,
         idEstructura: resolucion.values.idEstructura,
+        idLugarMuestra: resolucion.values.idLugarMuestra,
         idMuestreador: resolucion.values.idMuestreador,
         idEstadoFenologico: resolucion.values.idEstadoFenologico,
         observacionGeneral: resolucion.values.observacionGeneral || null,
@@ -365,6 +368,7 @@ class MonitoreosService {
     const totalConteos = plagas.reduce((total, plaga) => total + plaga.conteos.length, 0);
     const resumenConteos = this.calcularResumenConteos(plagas);
     const responsables = this.prepararResponsablesPresentacion(cabecera);
+    const nombreUsuarioCreacion = String(cabecera.nombre_usuario_creacion ?? '').trim();
 
     return {
       idMuestreo: cabecera.id_muestreo,
@@ -387,6 +391,8 @@ class MonitoreosService {
         csg: cabecera.csg || (cabecera.id_catalogo_sdp ? 'No disponible en catalogo de marcha blanca.' : '-'),
         trazabilidad: cabecera.trazabilidad || '-',
         estructura: cabecera.nombre_estructura || '-',
+        idLugarMuestra: cabecera.id_lugar_muestra || null,
+        nombreLugarMuestra: String(cabecera.nombre_lugar_muestra ?? '').trim(),
         muestreador: cabecera.nombre_muestreador || '',
         cantUnidadesMuestreadas: cabecera.cant_unidades_muestreadas,
         estadoFenologico: cabecera.nombre_estado_fenologico || '',
@@ -398,6 +404,7 @@ class MonitoreosService {
         observacionResultado: cabecera.observacion_resultado || '',
         fechaResultado: this.formatearFechaIso(cabecera.fecha_resultado),
         personaEnvioMuestra: responsables.personaEnvioMuestra,
+        nombreUsuarioCreacion,
         usuarioCreacion: responsables.usuarioCreacion,
         usuarioResultado: responsables.usuarioResultado,
         fechaCreacion: this.formatearFechaIso(cabecera.fecha_creacion),
@@ -745,6 +752,7 @@ class MonitoreosService {
   async resolverFormulario(data) {
     const values = this.normalizarEntrada(data);
     const errors = [];
+    const idLugarMuestraRecibido = String((data && data.id_lugar_muestra) ?? '').trim();
 
     if (!values.genFundo) {
       errors.push('Debe seleccionar un fundo.');
@@ -764,6 +772,12 @@ class MonitoreosService {
 
     if (!values.idEstructura) {
       errors.push('Debe seleccionar una estructura.');
+    }
+
+    if (!idLugarMuestraRecibido) {
+      errors.push('Debe seleccionar un tipo de muestra.');
+    } else if (!values.idLugarMuestra) {
+      errors.push('El tipo de muestra seleccionado no es valido.');
     }
 
     if (!values.idMuestreador) {
@@ -850,6 +864,16 @@ class MonitoreosService {
     }
 
     if (errors.length === 0) {
+      const lugarMuestra = await this.monitoreosRepository.findLugarMuestraById(values.idLugarMuestra);
+
+      if (!lugarMuestra) {
+        errors.push('El tipo de muestra seleccionado no existe.');
+      } else if (lugarMuestra.activo !== true && lugarMuestra.activo !== 1) {
+        errors.push('El tipo de muestra seleccionado esta inactivo.');
+      }
+    }
+
+    if (errors.length === 0) {
       const muestreador = await this.monitoreosRepository.findMuestreadorById(values.idMuestreador);
 
       if (!muestreador || (muestreador.activo !== true && muestreador.activo !== 1)) {
@@ -889,6 +913,7 @@ class MonitoreosService {
       genVariedad: '',
       idCatalogoSdp: '',
       idEstructura: '',
+      idLugarMuestra: '',
       idMuestreador: '',
       idEstadoFenologico: '',
       fechaSolicitudMuestra: '',
@@ -934,6 +959,7 @@ class MonitoreosService {
       genVariedad: this.normalizarId(data.genVariedad),
       idCatalogoSdp: this.normalizarId(data.idCatalogoSdp),
       idEstructura: this.normalizarId(data.idEstructura),
+      idLugarMuestra: this.normalizarId(data.id_lugar_muestra),
       idMuestreador: this.normalizarId(data.id_muestreador),
       idEstadoFenologico: this.normalizarId(data.id_estadofenologico),
       fechaSolicitudMuestra: (data.fechaSolicitudMuestra || '').trim(),
