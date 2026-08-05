@@ -60,6 +60,7 @@ class AgroclimaMoniplaService {
       nombreEstacionMeteo: estacionPrincipal.nombre_estacion || null,
     };
     const intentos = [];
+    let mejorParcial = null;
 
     for (const estacion of estacionesValidas) {
       const stationIdUuid = this.normalizarUuid(estacion.station_id_uuid);
@@ -115,17 +116,33 @@ class AgroclimaMoniplaService {
         continue;
       }
 
-      const snapshotFinal = {
-        ...snapshotRespuesta,
-        agroclimaObservacion: estacion === estacionPrincipal
-          ? snapshotRespuesta.agroclimaObservacion
-          : this.crearObservacionRespaldo(
-            estacionPrincipal,
-            estacion,
-            snapshotRespuesta.agroclimaObservacion,
-            intentos
-          ),
+      const candidato = {
+        estacion,
+        evaluacion,
+        response,
+        snapshot: snapshotRespuesta,
       };
+
+      if (evaluacion.cobertura === 'PARCIAL') {
+        intentos.push({
+          estacion,
+          motivo: 'PARCIAL',
+          diasConDatos: evaluacion.diasConDatos,
+          diasSinDatos: evaluacion.diasSinDatos,
+        });
+
+        if (this.esMejorParcial(candidato, mejorParcial)) {
+          mejorParcial = candidato;
+        }
+
+        continue;
+      }
+
+      const snapshotFinal = this.crearSnapshotSeleccionado(
+        candidato,
+        estacionPrincipal,
+        intentos
+      );
 
       this.logDebug('SNAPSHOT', {
         idOrigenMuestra,
@@ -133,6 +150,25 @@ class AgroclimaMoniplaService {
         prioridad: estacion.prioridad,
         fecha_muestra: fechaMuestra,
         response,
+        snapshot: snapshotFinal,
+      });
+
+      return snapshotFinal;
+    }
+
+    if (mejorParcial) {
+      const snapshotFinal = this.crearSnapshotSeleccionado(
+        mejorParcial,
+        estacionPrincipal,
+        intentos
+      );
+
+      this.logDebug('SNAPSHOT', {
+        idOrigenMuestra,
+        station_id_uuid: snapshotFinal.estacionMeteoUuid,
+        prioridad: mejorParcial.estacion.prioridad,
+        fecha_muestra: fechaMuestra,
+        response: mejorParcial.response,
         snapshot: snapshotFinal,
       });
 
@@ -156,6 +192,27 @@ class AgroclimaMoniplaService {
       estacionMeteoUuid: mapped.estacionMeteoUuid
         || this.normalizarUuid(estacion.station_id_uuid),
       nombreEstacionMeteo: estacion.nombre_estacion || null,
+    };
+  }
+
+  crearSnapshotSeleccionado(candidato, estacionPrincipal, intentos) {
+    const { estacion, evaluacion, snapshot } = candidato;
+    let observacion = snapshot.agroclimaObservacion;
+
+    if (estacion !== estacionPrincipal) {
+      observacion = this.crearObservacionRespaldo(
+        estacionPrincipal,
+        estacion,
+        evaluacion,
+        intentos
+      );
+    } else if (evaluacion.cobertura === 'PARCIAL') {
+      observacion = this.crearObservacionParcialSeleccionada(estacion, evaluacion);
+    }
+
+    return {
+      ...snapshot,
+      agroclimaObservacion: observacion,
     };
   }
 
@@ -251,11 +308,37 @@ class AgroclimaMoniplaService {
         ? gradosDia !== null
         : horasFrio !== null || gradosDia !== null;
 
+    const diasSinDatosValue = Number(response && response.dias_sin_datos);
+    const diasSinDatos = Number.isFinite(diasSinDatosValue) && diasSinDatosValue >= 0
+      ? diasSinDatosValue
+      : null;
+    const cobertura = status === 'OK' && (diasSinDatos === null || diasSinDatos === 0)
+      ? 'COMPLETA'
+      : 'PARCIAL';
+
     return {
       utilizable: tieneMetricaActiva,
       concluyenteSinIndicador: false,
       motivo: tieneMetricaActiva ? 'OK' : 'METRICA_ACTIVA_SIN_DATOS',
+      cobertura,
+      diasConDatos,
+      diasSinDatos,
     };
+  }
+
+  esMejorParcial(candidato, actual) {
+    if (!actual) {
+      return true;
+    }
+
+    if (candidato.evaluacion.diasConDatos !== actual.evaluacion.diasConDatos) {
+      return candidato.evaluacion.diasConDatos > actual.evaluacion.diasConDatos;
+    }
+
+    const diasSinDatosCandidato = candidato.evaluacion.diasSinDatos ?? Number.MAX_SAFE_INTEGER;
+    const diasSinDatosActual = actual.evaluacion.diasSinDatos ?? Number.MAX_SAFE_INTEGER;
+
+    return diasSinDatosCandidato < diasSinDatosActual;
   }
 
   calcularFechaCorteEsperada(fechaMuestra) {
@@ -286,15 +369,38 @@ class AgroclimaMoniplaService {
       && Number(error.status) >= 500;
   }
 
-  crearObservacionRespaldo(estacionPrincipal, estacionUtilizada, observacion, intentos) {
+  crearObservacionRespaldo(estacionPrincipal, estacionUtilizada, evaluacion, intentos) {
     const principal = String(estacionPrincipal.nombre_estacion || 'sin nombre').trim();
     const utilizada = String(estacionUtilizada.nombre_estacion || 'sin nombre').trim();
-    const motivo = intentos.some((intento) => intento.motivo === 'ERROR')
-      ? 'error o falta de datos en estaciones anteriores'
-      : 'estaciones anteriores sin datos utilizables';
-    const texto = `Estacion de respaldo utilizada. Primaria: ${principal}. Utilizada: ${utilizada}. Motivo: ${motivo}. ${observacion || ''}`;
+    const intentoPrincipal = intentos.find((intento) => intento.estacion === estacionPrincipal);
+    const cobertura = evaluacion.cobertura === 'COMPLETA'
+      ? 'Cobertura completa.'
+      : `Cobertura parcial: ${this.formatearCobertura(evaluacion)}.`;
+    const motivo = intentoPrincipal && intentoPrincipal.motivo === 'PARCIAL'
+      ? 'la estacion primaria tenia cobertura parcial'
+      : intentoPrincipal && intentoPrincipal.motivo === 'ERROR'
+        ? 'error en estaciones anteriores'
+        : 'estaciones anteriores sin datos utilizables';
+    const texto = `Estacion de respaldo utilizada. Primaria: ${principal}. Utilizada: ${utilizada}. ${cobertura} Motivo: ${motivo}.`;
 
     return texto.trim().slice(0, 250);
+  }
+
+  crearObservacionParcialSeleccionada(estacion, evaluacion) {
+    const nombre = String(estacion.nombre_estacion || 'sin nombre').trim();
+    const texto = `Agroclima parcial. Estacion utilizada: ${nombre}. Cobertura: ${this.formatearCobertura(evaluacion)}. No se encontro una estacion con cobertura completa.`;
+
+    return texto.slice(0, 250);
+  }
+
+  formatearCobertura(evaluacion) {
+    const diasConDatos = `${evaluacion.diasConDatos} dias con datos`;
+
+    if (evaluacion.diasSinDatos === null) {
+      return diasConDatos;
+    }
+
+    return `${diasConDatos} y ${evaluacion.diasSinDatos} sin datos`;
   }
 
   crearObservacionSinDatos(estaciones) {

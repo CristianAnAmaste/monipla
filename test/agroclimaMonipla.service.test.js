@@ -77,6 +77,104 @@ test('usa la estacion de prioridad 2 cuando la primaria no tiene datos', async (
   assert.match(snapshot.agroclimaObservacion, /Utilizada: NTC/);
 });
 
+test('consulta prioridad 2 y la usa cuando la primaria es parcial', async () => {
+  const { servicio, llamadas } = crearServicio({
+    [LTZ_UUID]: {
+      station_id_uuid: LTZ_UUID,
+      fecha_corte: '2026-08-04',
+      anio_corte: 2026,
+      semana_corte: 32,
+      indicador_activo: 'HORAS_FRIO',
+      horas_frio_acumuladas: 55.25,
+      grados_dia_acumulados: null,
+      dias_con_datos: 15,
+      dias_sin_datos: 110,
+      calculation_status: 'PARCIAL',
+    },
+    [NTC_UUID]: {
+      station_id_uuid: NTC_UUID,
+      fecha_corte: '2026-08-04',
+      anio_corte: 2026,
+      semana_corte: 32,
+      indicador_activo: 'HORAS_FRIO',
+      horas_frio_acumuladas: 420.5,
+      grados_dia_acumulados: null,
+      dias_con_datos: 125,
+      dias_sin_datos: 0,
+      calculation_status: 'OK',
+    },
+  });
+
+  const snapshot = await servicio.calcularSnapshot(10, '2026-08-05');
+
+  assert.deepEqual(llamadas, [LTZ_UUID, NTC_UUID]);
+  assert.equal(snapshot.estacionMeteoUuid, NTC_UUID);
+  assert.equal(snapshot.nombreEstacionMeteo, 'NTC');
+  assert.equal(snapshot.horasFrioAcumuladas, 420.5);
+  assert.match(snapshot.agroclimaObservacion, /Cobertura completa/);
+  assert.match(snapshot.agroclimaObservacion, /primaria tenia cobertura parcial/);
+});
+
+test('si ambas estaciones son parciales usa la de mayor cobertura', async () => {
+  const { servicio, llamadas } = crearServicio({
+    [LTZ_UUID]: {
+      station_id_uuid: LTZ_UUID,
+      fecha_corte: '2026-08-04',
+      indicador_activo: 'HORAS_FRIO',
+      horas_frio_acumuladas: 55.25,
+      dias_con_datos: 15,
+      dias_sin_datos: 110,
+      calculation_status: 'PARCIAL',
+    },
+    [NTC_UUID]: {
+      station_id_uuid: NTC_UUID,
+      fecha_corte: '2026-08-04',
+      indicador_activo: 'HORAS_FRIO',
+      horas_frio_acumuladas: 390.75,
+      dias_con_datos: 100,
+      dias_sin_datos: 25,
+      calculation_status: 'PARCIAL',
+    },
+  });
+
+  const snapshot = await servicio.calcularSnapshot(10, '2026-08-05');
+
+  assert.deepEqual(llamadas, [LTZ_UUID, NTC_UUID]);
+  assert.equal(snapshot.estacionMeteoUuid, NTC_UUID);
+  assert.equal(snapshot.horasFrioAcumuladas, 390.75);
+  assert.match(snapshot.agroclimaObservacion, /Cobertura parcial: 100 dias con datos y 25 sin datos/);
+});
+
+test('mantiene la primaria si ambas son parciales y la primaria tiene mayor cobertura', async () => {
+  const { servicio, llamadas } = crearServicio({
+    [LTZ_UUID]: {
+      station_id_uuid: LTZ_UUID,
+      fecha_corte: '2026-08-04',
+      indicador_activo: 'HORAS_FRIO',
+      horas_frio_acumuladas: 380.25,
+      dias_con_datos: 100,
+      dias_sin_datos: 25,
+      calculation_status: 'PARCIAL',
+    },
+    [NTC_UUID]: {
+      station_id_uuid: NTC_UUID,
+      fecha_corte: '2026-08-04',
+      indicador_activo: 'HORAS_FRIO',
+      horas_frio_acumuladas: 45.5,
+      dias_con_datos: 15,
+      dias_sin_datos: 110,
+      calculation_status: 'PARCIAL',
+    },
+  });
+
+  const snapshot = await servicio.calcularSnapshot(10, '2026-08-05');
+
+  assert.deepEqual(llamadas, [LTZ_UUID, NTC_UUID]);
+  assert.equal(snapshot.estacionMeteoUuid, LTZ_UUID);
+  assert.equal(snapshot.horasFrioAcumuladas, 380.25);
+  assert.match(snapshot.agroclimaObservacion, /No se encontro una estacion con cobertura completa/);
+});
+
 test('acepta cero como valor real si la estacion primaria tiene dias con datos', async () => {
   const { servicio, llamadas } = crearServicio({
     [LTZ_UUID]: {
