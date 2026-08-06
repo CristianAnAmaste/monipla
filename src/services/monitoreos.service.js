@@ -19,7 +19,7 @@ class MonitoreosService {
     catalogoSdpService = new CatalogoSdpService()
   ) {
     this.catalogoSdpService = catalogoSdpService;
-    this.monitoreosRepository = monitoreosRepository || new MonitoreosRepository(catalogoSdpService);
+    this.monitoreosRepository = monitoreosRepository || new MonitoreosRepository();
     this.agroclimaService = agroclimaService;
     this.monitoreoPdfService = monitoreoPdfService;
   }
