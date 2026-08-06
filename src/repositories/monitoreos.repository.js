@@ -1,11 +1,6 @@
 const { poolPromise, sql } = require('../config/db');
-const CatalogoSdpService = require('../services/catalogoSdp.service');
 
 class MonitoreosRepository {
-  constructor(catalogoSdpService = new CatalogoSdpService()) {
-    this.catalogoSdpService = catalogoSdpService;
-  }
-
   async findEstructurasActivas() {
     const pool = await poolPromise;
 
@@ -136,14 +131,6 @@ class MonitoreosRepository {
       `);
 
     return result.recordset[0] || null;
-  }
-
-  async resolverCatalogoSdpEnTransaccion(data, transaction) {
-    return this.catalogoSdpService.resolverCanonicoPorId(
-      data.idCatalogoSdp,
-      data.seleccion,
-      transaction
-    );
   }
 
   async buscarOrigenMuestra(origen, transaction = null) {
@@ -296,7 +283,7 @@ class MonitoreosRepository {
       await transaction.begin();
       transactionStarted = true;
 
-      await this.resolverCatalogoSdpEnTransaccion(data, transaction);
+      await data.revalidarCatalogoSdp(transaction);
 
       let origenMuestra = await this.buscarOrigenMuestra(data.origen, transaction);
 

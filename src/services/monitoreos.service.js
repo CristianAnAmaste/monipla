@@ -138,6 +138,15 @@ class MonitoreosService {
         resolucion.values.fechaRecepcionMuestra,
         transaction
       ),
+      revalidarCatalogoSdp: (transaction) => this.catalogoSdpService.resolverCanonicoPorId(
+        resolucion.origen.id_catalogo_sdp,
+        {
+          genFundo: resolucion.values.genFundo,
+          genCampo: resolucion.values.genCampo,
+          genVariedad: resolucion.values.genVariedad,
+        },
+        transaction
+      ),
     };
 
     let cabecera;
