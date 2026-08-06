@@ -58,10 +58,10 @@ class MonitoreoPdfService {
     }));
 
     return this.crearBuffer(async (doc) => {
-      await this.agregarEncabezadoReporteGeneral(doc, reporte.filtros, generatedAt);
+      await this.agregarEncabezadoReporteGeneral(doc, generatedAt);
 
       if (!bloques.length) {
-        this.agregarTexto(doc, 'No se encontraron monitoreos para los filtros aplicados.');
+        this.agregarTexto(doc, 'No se encontraron monitoreos para la selección actual.');
       } else {
         bloques.forEach((bloque) => this.agregarBloqueReporteGeneral(doc, bloque.detalle, bloque.matriz));
       }
@@ -162,21 +162,21 @@ class MonitoreoPdfService {
     doc.y = y + 86;
   }
 
-  async agregarEncabezadoReporteGeneral(doc, filtros, generatedAt) {
+  async agregarEncabezadoReporteGeneral(doc, generatedAt) {
     const x = doc.page.margins.left;
     const y = doc.y;
     const width = this.anchoUtil(doc);
     const logoWidth = 82;
 
     doc.save()
-      .roundedRect(x, y, width, 72, 5)
+      .roundedRect(x, y, width, 64, 5)
       .fill(COLORS.header)
       .restore();
 
     if (this.logoPath) {
       try {
         const logoBuffer = await this.obtenerBufferImagen(this.logoPath);
-        doc.image(logoBuffer, x + 12, y + 12, { fit: [logoWidth, 48] });
+        doc.image(logoBuffer, x + 12, y + 11, { fit: [logoWidth, 42] });
       } catch (_) {
         // El reporte no debe fallar si el logo no puede cargarse.
       }
@@ -186,22 +186,16 @@ class MonitoreoPdfService {
     doc.font('Helvetica-Bold')
       .fontSize(FONT.title)
       .fillColor(COLORS.primaryDark)
-      .text('Reporte general de monitoreo de plagas', titleX, y + 12, {
+      .text('Reporte general de monitoreo de plagas', titleX, y + 10, {
         width: x + width - titleX - 12,
       });
     doc.font('Helvetica')
       .fontSize(9.5)
       .fillColor(COLORS.muted)
-      .text(`MONIPLA - Fecha de generacion: ${this.formatearFechaHora(generatedAt)}`, titleX, y + 40, {
+      .text(`MONIPLA - Fecha de generacion: ${this.formatearFechaHora(generatedAt)}`, titleX, y + 36, {
         width: x + width - titleX - 12,
       });
-    doc.y = y + 82;
-
-    this.agregarSeccion(doc, 'Filtros aplicados');
-    const items = Array.isArray(filtros) && filtros.length > 0
-      ? filtros
-      : [['Filtros', 'Todos los monitoreos']];
-    this.agregarResumenFiltrosReporte(doc, items);
+    doc.y = y + 72;
   }
 
   agregarResumenFiltrosReporte(doc, items) {
@@ -358,8 +352,8 @@ class MonitoreoPdfService {
     const x = doc.page.margins.left;
     const width = this.anchoUtil(doc);
     const anchoCabecera = Math.round(width * 0.36);
-    const alturaObservacion = this.calcularAlturaObservacionGeneralReporte(doc, detalle, anchoCabecera);
-    const alturaMinima = 224 + Math.max(0, alturaObservacion - 24);
+    const alturaCabecera = this.calcularAlturaCabeceraReporteGeneral(doc, detalle, anchoCabecera);
+    const alturaMinima = 42 + alturaCabecera;
 
     if (!this.hayEspacio(doc, alturaMinima) && doc.y > doc.page.margins.top + 4) {
       doc.addPage();
@@ -370,18 +364,33 @@ class MonitoreoPdfService {
       .roundedRect(x, y, width, 24, 4)
       .fill(COLORS.soft)
       .restore();
+    const anchoZonaIzquierda = Math.round(width * 0.39);
+    const anchoZonaDerecha = Math.round(width * 0.22);
+    const anchoZonaCentro = width - anchoZonaIzquierda - anchoZonaDerecha;
+    const agroclima = this.obtenerIndicadorAgroclimaReporte(detalle.agroclima);
+
     doc.font('Helvetica-Bold')
       .fontSize(10.5)
       .fillColor(COLORS.primaryDark)
       .text(`Monitoreo #${this.valorReporte(detalle.numeroMuestreo)} - ${this.valorReporte((detalle.cabecera || {}).fechaMonitoreo)}`, x + 8, y + 7, {
-        width: width - 180,
+        width: anchoZonaIzquierda - 16,
+        lineBreak: false,
+      });
+    doc.font('Helvetica-Bold')
+      .fontSize(8.8)
+      .fillColor(COLORS.primaryDark)
+      .text(agroclima, x + anchoZonaIzquierda + 4, y + 8, {
+        width: anchoZonaCentro - 8,
+        align: 'center',
+        lineBreak: false,
       });
     doc.font('Helvetica-Bold')
       .fontSize(9)
       .fillColor(COLORS.text)
-      .text(`Estado: ${this.valorReporte(detalle.estadoResultado)}`, x + width - 170, y + 7, {
-        width: 162,
+      .text(`Estado: ${this.valorReporte(detalle.estadoResultado)}`, x + anchoZonaIzquierda + anchoZonaCentro, y + 7, {
+        width: anchoZonaDerecha - 8,
         align: 'right',
+        lineBreak: false,
       });
 
     const top = y + 30;
@@ -401,50 +410,35 @@ class MonitoreoPdfService {
 
   dibujarCabeceraReporteGeneral(doc, detalle, x, y, width) {
     const info = detalle.cabecera || {};
-    const items = [
-      ['Fundo', info.fundo],
-      ['Campo', info.campo],
-      ['Variedad', info.variedad],
-      ['Cuartel', info.cuartel],
-      ['Muestrador', info.muestreador],
-      ['Ingresado por', info.nombreUsuarioCreacion, { incluirGuion: true }],
-      ['SDP', info.sdp],
-      ['CSG', info.csg],
-      ['Tipo de muestra', info.nombreLugarMuestra, { incluirGuion: true }],
-      ['Estado fenologico', info.estadoFenologico],
-      ['Trazabilidad', info.trazabilidad],
-    ];
+    const filas = this.obtenerFilasCabeceraReporteGeneral(detalle);
     const gap = 7;
     const colWidth = (width - gap) / 2;
-    let bottom = y;
+    let rowY = y;
 
-    items.forEach(([label, value, options = {}], index) => {
-      const column = index % 2;
-      const row = Math.floor(index / 2);
-      const cellX = x + (column * (colWidth + gap));
-      const cellY = y + (row * 27);
-      doc.font('Helvetica-Bold')
-        .fontSize(7)
-        .fillColor(COLORS.muted)
-        .text(`${label}:`, cellX, cellY, { width: colWidth, lineBreak: false });
-      doc.font('Helvetica')
-        .fontSize(8.3)
-        .fillColor(COLORS.text)
-        .text(
-          options.incluirGuion ? (this.valor(value) || '-') : this.valorReporte(value),
-          cellX,
-          cellY + 9,
-          { width: colWidth, lineGap: 0 }
-        );
-      bottom = Math.max(bottom, cellY + 23);
+    filas.forEach((fila) => {
+      const alturaFila = this.calcularAlturaFilaCabeceraReporteGeneral(doc, fila, colWidth);
+
+      fila.forEach(([label, value], column) => {
+        const cellX = x + (column * (colWidth + gap));
+        doc.font('Helvetica-Bold')
+          .fontSize(7)
+          .fillColor(COLORS.muted)
+          .text(`${label}:`, cellX, rowY, { width: colWidth, lineBreak: false });
+        doc.font('Helvetica')
+          .fontSize(8.3)
+          .fillColor(COLORS.text)
+          .text(this.valorReporte(value), cellX, rowY + 9, { width: colWidth, lineGap: 0 });
+      });
+
+      rowY += alturaFila;
     });
 
     const observacion = this.valor(info.observacionGeneral) || 'Sin Observaciones';
     doc.font('Helvetica-Bold')
       .fontSize(7)
       .fillColor(COLORS.muted)
-      .text('Observación general:', x, bottom + 3, { width });
-    const observacionY = bottom + 12;
+      .text('Observación general:', x, rowY + 3, { width });
+    const observacionY = rowY + 12;
     const observacionHeight = doc.font('Helvetica')
       .fontSize(8.3)
       .heightOfString(observacion, { width, lineGap: 0 });
@@ -454,16 +448,54 @@ class MonitoreoPdfService {
     return observacionY + Math.max(12, observacionHeight);
   }
 
-  calcularAlturaObservacionGeneralReporte(doc, detalle, width) {
+  obtenerFilasCabeceraReporteGeneral(detalle) {
+    const info = detalle.cabecera || {};
+
+    return [
+      [['Fundo', info.fundo], ['Campo', info.campo]],
+      [['Variedad', info.variedad], ['Cuartel', info.cuartel]],
+      [['Estructura monitoreada', info.estructura], ['Tipo de muestra', info.nombreLugarMuestra]],
+      [['Estado fenológico', info.estadoFenologico], ['Muestrador', info.muestreador]],
+      [['Ingresado por', info.nombreUsuarioCreacion], ['SDP', info.sdp]],
+      [['CSG', info.csg], ['Trazabilidad', info.trazabilidad]],
+    ];
+  }
+
+  calcularAlturaFilaCabeceraReporteGeneral(doc, fila, colWidth) {
+    const alturaValores = fila.map(([, value]) => doc.font('Helvetica')
+      .fontSize(8.3)
+      .heightOfString(this.valorReporte(value), { width: colWidth, lineGap: 0 }));
+
+    return Math.max(22, 9 + Math.max(...alturaValores));
+  }
+
+  calcularAlturaCabeceraReporteGeneral(doc, detalle, width) {
+    const gap = 7;
+    const colWidth = (width - gap) / 2;
+    const alturaFilas = this.obtenerFilasCabeceraReporteGeneral(detalle)
+      .reduce((total, fila) => total + this.calcularAlturaFilaCabeceraReporteGeneral(doc, fila, colWidth), 0);
     const observacion = this.valor((detalle.cabecera || {}).observacionGeneral) || 'Sin Observaciones';
-    const alturaEtiqueta = doc.font('Helvetica-Bold')
-      .fontSize(7)
-      .heightOfString('Observación general:', { width, lineGap: 0 });
     const alturaTexto = doc.font('Helvetica')
       .fontSize(8.3)
       .heightOfString(observacion, { width, lineGap: 0 });
 
-    return 3 + alturaEtiqueta + Math.max(12, alturaTexto);
+    return alturaFilas + 12 + Math.max(12, alturaTexto);
+  }
+
+  obtenerIndicadorAgroclimaReporte(agroclima) {
+    if (agroclima && this.tieneValor(agroclima.horasFrio)) {
+      return `Horas frío: ${agroclima.horasFrio} h`;
+    }
+
+    if (agroclima && this.tieneValor(agroclima.diasGrado)) {
+      return `Grados día: ${agroclima.diasGrado} GD`;
+    }
+
+    if (agroclima && agroclima.mostrarSinEstacion) {
+      return 'Agroclima: Sin estación';
+    }
+
+    return 'Agroclima: Sin datos';
   }
 
   valorReporte(value) {

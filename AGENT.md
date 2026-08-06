@@ -177,3 +177,4 @@ Tablas MONIPLA vigentes:
 - `README.md`: setup inicial, instalacion, dependencias y ejecucion local.
 - `GUIA_FUNCIONAMIENTO_SOFTWARE.md`: referencia tecnica antigua; puede estar obsoleta.
 - `README_FRONTEND.md`: referencia frontend antigua; util para layout base, puede estar obsoleta.
+- cuando se agreguen mas estaciones o campos se debe mejorar aqui la tabla, recuerda que tiene prioridad segun el lugar donde esta la estacion o la muestra, por ejemplo estaba la estacion de las terrazas pero esta mala, entonces para esos sectores se utiliza nantoco.
