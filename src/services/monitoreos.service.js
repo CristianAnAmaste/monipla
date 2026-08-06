@@ -1,5 +1,6 @@
 const sharp = require('sharp');
 const MonitoreosRepository = require('../repositories/monitoreos.repository');
+const CatalogoSdpService = require('./catalogoSdp.service');
 const AgroclimaMoniplaService = require('./agroclimaMonipla.service');
 const MonitoreoPdfService = require('./monitoreoPdf.service');
 
@@ -12,18 +13,20 @@ const HISTORIAL_PAGE_SIZE = 10;
 
 class MonitoreosService {
   constructor(
-    monitoreosRepository = new MonitoreosRepository(),
+    monitoreosRepository = null,
     agroclimaService = new AgroclimaMoniplaService(),
-    monitoreoPdfService = new MonitoreoPdfService()
+    monitoreoPdfService = new MonitoreoPdfService(),
+    catalogoSdpService = new CatalogoSdpService()
   ) {
-    this.monitoreosRepository = monitoreosRepository;
+    this.catalogoSdpService = catalogoSdpService;
+    this.monitoreosRepository = monitoreosRepository || new MonitoreosRepository(catalogoSdpService);
     this.agroclimaService = agroclimaService;
     this.monitoreoPdfService = monitoreoPdfService;
   }
 
   async getFormularioData(values = this.getValoresIniciales()) {
     const [fundos, estructuras, lugaresMuestra, estadosFenologicos, muestreadores] = await Promise.all([
-      this.monitoreosRepository.findFondosDisponibles(),
+      this.catalogoSdpService.listarFondosDisponibles(),
       this.monitoreosRepository.findEstructurasActivas(),
       this.monitoreosRepository.findLugaresMuestraActivos(),
       this.monitoreosRepository.findEstadosFenologicosActivos(),
@@ -49,7 +52,7 @@ class MonitoreosService {
       return [];
     }
 
-    return this.monitoreosRepository.findCamposByFundo(fundoId);
+    return this.catalogoSdpService.listarCamposPorFundo(fundoId);
   }
 
   async listarVariedades(genFundo, genCampo) {
@@ -60,7 +63,7 @@ class MonitoreosService {
       return [];
     }
 
-    return this.monitoreosRepository.findVariedadesByFundoCampo(fundoId, campoId);
+    return this.catalogoSdpService.listarVariedadesPorFundoCampo(fundoId, campoId);
   }
 
   async listarCuarteles(genFundo, genCampo, genVariedad) {
@@ -72,7 +75,7 @@ class MonitoreosService {
       return [];
     }
 
-    return this.monitoreosRepository.findCuartelesByFiltros(fundoId, campoId, variedadId);
+    return this.catalogoSdpService.listarCuartelesPorFiltros(fundoId, campoId, variedadId);
   }
 
   async guardarCabeceraMonitoreo(data, usuarioSesion) {
@@ -831,25 +834,23 @@ class MonitoreosService {
     let origen = null;
 
     if (errors.length === 0) {
-      const filasCatalogo = await this.monitoreosRepository.findCatalogoSdpMbById(values.idCatalogoSdp);
+      try {
+        origen = await this.catalogoSdpService.resolverCanonicoPorId(
+          values.idCatalogoSdp,
+          {
+            genFundo: values.genFundo,
+            genCampo: values.genCampo,
+            genVariedad: values.genVariedad,
+          }
+        );
+      } catch (error) {
+        const mensajeCatalogo = this.obtenerMensajeErrorCatalogoSdp(error.message);
 
-      if (filasCatalogo.length === 0) {
-        errors.push('El cuartel seleccionado no esta disponible en el catalogo de marcha blanca.');
-      } else if (filasCatalogo.length !== 1) {
-        errors.push('El cuartel seleccionado no tiene una resolucion canonica unica en el catalogo de marcha blanca.');
-      } else {
-        [origen] = filasCatalogo;
-      }
-    }
+        if (!mensajeCatalogo) {
+          throw error;
+        }
 
-    if (errors.length === 0) {
-      const seleccionInconsistente =
-        Number(origen.gen_fundo) !== values.genFundo
-        || Number(origen.gen_campo) !== values.genCampo
-        || Number(origen.gen_variedad) !== values.genVariedad;
-
-      if (seleccionInconsistente) {
-        errors.push('La combinacion seleccionada de fundo, campo, variedad y cuartel no es valida.');
+        errors.push(mensajeCatalogo);
       }
     }
 
@@ -1634,6 +1635,16 @@ class MonitoreosService {
   obtenerIdUsuarioCreacion(usuarioSesion) {
     const idUsuario = this.normalizarId(usuarioSesion && usuarioSesion.id);
     return idUsuario || null;
+  }
+
+  obtenerMensajeErrorCatalogoSdp(codigo) {
+    const mensajes = {
+      CATALOGO_SDP_MB_NO_DISPONIBLE: 'El cuartel seleccionado no esta disponible en el catalogo de marcha blanca.',
+      CATALOGO_SDP_MB_NO_CANONICO: 'El cuartel seleccionado no tiene una resolucion canonica unica en el catalogo de marcha blanca.',
+      CATALOGO_SDP_MB_SELECCION_INVALIDA: 'La combinacion seleccionada de fundo, campo, variedad y cuartel no es valida.',
+    };
+
+    return mensajes[codigo] || null;
   }
 
   buildResumen(values, origen, estructura) {

@@ -1,92 +1,9 @@
 const { poolPromise, sql } = require('../config/db');
+const CatalogoSdpService = require('../services/catalogoSdp.service');
 
 class MonitoreosRepository {
-  async findFondosDisponibles() {
-    const pool = await poolPromise;
-
-    const result = await pool.request().query(`
-      SELECT
-        gen_fundo AS value,
-        fundo AS label
-      FROM dbo.MONIPLA_CATALOGO_SDP_MB
-      WHERE activo = 1
-        AND sdp IS NOT NULL
-      GROUP BY gen_fundo, fundo
-      ORDER BY fundo ASC
-    `);
-
-    return result.recordset;
-  }
-
-  async findCamposByFundo(genFundo) {
-    const pool = await poolPromise;
-
-    const result = await pool
-      .request()
-      .input('genFundo', sql.Int, genFundo)
-      .query(`
-        SELECT
-          gen_campo AS value,
-          nombre_productor AS label
-        FROM dbo.MONIPLA_CATALOGO_SDP_MB
-        WHERE activo = 1
-          AND sdp IS NOT NULL
-          AND gen_fundo = @genFundo
-        GROUP BY gen_campo, nombre_productor
-        ORDER BY nombre_productor ASC
-      `);
-
-    return result.recordset;
-  }
-
-  async findVariedadesByFundoCampo(genFundo, genCampo) {
-    const pool = await poolPromise;
-
-    const result = await pool
-      .request()
-      .input('genFundo', sql.Int, genFundo)
-      .input('genCampo', sql.Int, genCampo)
-      .query(`
-        SELECT
-          gen_variedad AS value,
-          variedad AS label
-        FROM dbo.MONIPLA_CATALOGO_SDP_MB
-        WHERE activo = 1
-          AND sdp IS NOT NULL
-          AND gen_fundo = @genFundo
-          AND gen_campo = @genCampo
-        GROUP BY gen_variedad, variedad
-        ORDER BY variedad ASC
-      `);
-
-    return result.recordset;
-  }
-
-  async findCuartelesByFiltros(genFundo, genCampo, genVariedad) {
-    const pool = await poolPromise;
-
-    const result = await pool
-      .request()
-      .input('genFundo', sql.Int, genFundo)
-      .input('genCampo', sql.Int, genCampo)
-      .input('genVariedad', sql.Int, genVariedad)
-      .query(`
-        SELECT
-          id_catalogo_sdp AS value,
-          cuartel AS label
-        FROM dbo.MONIPLA_CATALOGO_SDP_MB
-        WHERE activo = 1
-          AND sdp IS NOT NULL
-          AND gen_fundo = @genFundo
-          AND gen_campo = @genCampo
-          AND gen_variedad = @genVariedad
-        ORDER BY
-          CASE WHEN TRY_CONVERT(INT, cuartel) IS NULL THEN 1 ELSE 0 END,
-          TRY_CONVERT(INT, cuartel),
-          cuartel
-      `);
-
-    return result.recordset;
+  constructor(catalogoSdpService = new CatalogoSdpService()) {
+    this.catalogoSdpService = catalogoSdpService;
   }
 
   async findEstructurasActivas() {
@@ -221,32 +138,12 @@ class MonitoreosRepository {
     return result.recordset[0] || null;
   }
 
-  async findCatalogoSdpMbById(idCatalogoSdp, transaction = null) {
-    const request = await this.createRequest(transaction);
-
-    const result = await request
-      .input('idCatalogoSdp', sql.Int, idCatalogoSdp)
-      .query(`
-        SELECT
-          id_catalogo_sdp,
-          gen_fundo,
-          fundo,
-          gen_campo,
-          codigo_productor,
-          nombre_productor,
-          gen_variedad,
-          variedad,
-          cuartel,
-          sdp,
-          codigo_sag,
-          codigo_trazabilidad
-        FROM dbo.MONIPLA_CATALOGO_SDP_MB
-        WHERE id_catalogo_sdp = @idCatalogoSdp
-          AND activo = 1
-          AND sdp IS NOT NULL
-      `);
-
-    return result.recordset;
+  async resolverCatalogoSdpEnTransaccion(data, transaction) {
+    return this.catalogoSdpService.resolverCanonicoPorId(
+      data.idCatalogoSdp,
+      data.seleccion,
+      transaction
+    );
   }
 
   async buscarOrigenMuestra(origen, transaction = null) {
@@ -399,24 +296,7 @@ class MonitoreosRepository {
       await transaction.begin();
       transactionStarted = true;
 
-      const catalogos = await this.findCatalogoSdpMbById(data.idCatalogoSdp, transaction);
-
-      if (catalogos.length === 0) {
-        throw new Error('CATALOGO_SDP_MB_NO_DISPONIBLE');
-      }
-
-      if (catalogos.length !== 1) {
-        throw new Error('CATALOGO_SDP_MB_NO_CANONICO');
-      }
-
-      const catalogo = catalogos[0];
-      const seleccionInconsistente = Number(catalogo.gen_fundo) !== data.seleccion.genFundo
-        || Number(catalogo.gen_campo) !== data.seleccion.genCampo
-        || Number(catalogo.gen_variedad) !== data.seleccion.genVariedad;
-
-      if (seleccionInconsistente) {
-        throw new Error('CATALOGO_SDP_MB_SELECCION_INVALIDA');
-      }
+      await this.resolverCatalogoSdpEnTransaccion(data, transaction);
 
       let origenMuestra = await this.buscarOrigenMuestra(data.origen, transaction);
 
