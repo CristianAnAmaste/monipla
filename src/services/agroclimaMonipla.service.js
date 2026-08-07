@@ -20,9 +20,19 @@ class AgroclimaMoniplaService {
     this.meteoFealClient = meteoFealClient;
   }
 
-  async calcularSnapshotSeguro(idOrigenMuestra, fechaRecepcionMuestra, transaction = null) {
+  async calcularSnapshotSeguro(
+    idOrigenMuestra,
+    fechaRecepcionMuestra,
+    transaction = null,
+    estacionesConfiguradas = null
+  ) {
     try {
-      return await this.calcularSnapshot(idOrigenMuestra, fechaRecepcionMuestra, transaction);
+      return await this.calcularSnapshot(
+        idOrigenMuestra,
+        fechaRecepcionMuestra,
+        transaction,
+        estacionesConfiguradas
+      );
     } catch (error) {
       console.error('[MONIPLA][AGROCLIMA][ERROR]', {
         idOrigenMuestra,
@@ -34,11 +44,16 @@ class AgroclimaMoniplaService {
     }
   }
 
-  async calcularSnapshot(idOrigenMuestra, fechaRecepcionMuestra, transaction = null) {
+  async calcularSnapshot(
+    idOrigenMuestra,
+    fechaRecepcionMuestra,
+    transaction = null,
+    estacionesConfiguradas = null
+  ) {
     const fechaMuestra = this.formatearFechaIso(fechaRecepcionMuestra);
     const snapshot = this.crearSnapshotBase(null, null);
 
-    const estaciones = await this.agroclimaRepository.resolverEstacionesPorOrigen(
+    const estaciones = estacionesConfiguradas || await this.resolverEstacionesConfiguradas(
       idOrigenMuestra,
       fechaMuestra,
       transaction
@@ -195,6 +210,14 @@ class AgroclimaMoniplaService {
     };
   }
 
+  async resolverEstacionesConfiguradas(idOrigenMuestra, fechaMuestra, transaction = null) {
+    return this.agroclimaRepository.resolverEstacionesPorOrigen(
+      idOrigenMuestra,
+      fechaMuestra,
+      transaction
+    );
+  }
+
   crearSnapshotSeleccionado(candidato, estacionPrincipal, intentos) {
     const { estacion, evaluacion, snapshot } = candidato;
     let observacion = snapshot.agroclimaObservacion;
@@ -312,6 +335,7 @@ class AgroclimaMoniplaService {
     const diasSinDatos = Number.isFinite(diasSinDatosValue) && diasSinDatosValue >= 0
       ? diasSinDatosValue
       : null;
+    const coberturaDetallada = this.obtenerCoberturaDetallada(response);
     const cobertura = status === 'OK' && (diasSinDatos === null || diasSinDatos === 0)
       ? 'COMPLETA'
       : 'PARCIAL';
@@ -323,6 +347,7 @@ class AgroclimaMoniplaService {
       cobertura,
       diasConDatos,
       diasSinDatos,
+      ...coberturaDetallada,
     };
   }
 
@@ -394,6 +419,28 @@ class AgroclimaMoniplaService {
   }
 
   formatearCobertura(evaluacion) {
+    const tieneCoberturaDetallada = evaluacion.diasCoberturaCompleta !== null
+      || evaluacion.diasCoberturaParcialIncluida !== null
+      || evaluacion.diasSinTemperatura !== null;
+
+    if (tieneCoberturaDetallada) {
+      const partes = [];
+
+      if (evaluacion.diasCoberturaCompleta !== null) {
+        partes.push(`${evaluacion.diasCoberturaCompleta} dias con cobertura completa`);
+      }
+
+      if (evaluacion.diasCoberturaParcialIncluida !== null) {
+        partes.push(`${evaluacion.diasCoberturaParcialIncluida} dias con cobertura parcial incluidos`);
+      }
+
+      if (evaluacion.diasSinTemperatura !== null) {
+        partes.push(`${evaluacion.diasSinTemperatura} dias sin temperatura no incluidos`);
+      }
+
+      return partes.join(', ');
+    }
+
     const diasConDatos = `${evaluacion.diasConDatos} dias con datos`;
 
     if (evaluacion.diasSinDatos === null) {
@@ -401,6 +448,37 @@ class AgroclimaMoniplaService {
     }
 
     return `${diasConDatos} y ${evaluacion.diasSinDatos} sin datos`;
+  }
+
+  obtenerCoberturaDetallada(response) {
+    return {
+      diasCoberturaCompleta: this.obtenerContadorRespuesta(response, [
+        'dias_completos',
+        'dias_cobertura_completa',
+        'dias_con_cobertura_completa',
+      ]),
+      diasCoberturaParcialIncluida: this.obtenerContadorRespuesta(response, [
+        'dias_parciales_aprovechados',
+        'dias_parciales_incluidos',
+        'dias_con_cobertura_parcial',
+      ]),
+      diasSinTemperatura: this.obtenerContadorRespuesta(response, [
+        'dias_sin_temperatura',
+        'dias_sin_datos_no_incluidos',
+      ]),
+    };
+  }
+
+  obtenerContadorRespuesta(response, campos) {
+    for (const campo of campos) {
+      const value = Number(response && response[campo]);
+
+      if (Number.isFinite(value) && value >= 0) {
+        return value;
+      }
+    }
+
+    return null;
   }
 
   crearObservacionSinDatos(estaciones) {
