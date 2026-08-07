@@ -1,10 +1,16 @@
 const ChanchitosService = require('../services/chanchitos.service');
+const ChanchitosPdfService = require('../services/chanchitosPdf.service');
 
 class ChanchitosController {
-  constructor(chanchitosService = new ChanchitosService()) {
+  constructor(
+    chanchitosService = new ChanchitosService(),
+    chanchitosPdfService = new ChanchitosPdfService()
+  ) {
     this.chanchitosService = chanchitosService;
+    this.chanchitosPdfService = chanchitosPdfService;
     this.nuevo = this.nuevo.bind(this);
     this.crear = this.crear.bind(this);
+    this.descargarPdfGeneral = this.descargarPdfGeneral.bind(this);
   }
 
   async nuevo(req, res) {
@@ -80,6 +86,40 @@ class ChanchitosController {
         errors: ['No fue posible guardar el Monitoreo de Chanchitos. Revise los datos e intente nuevamente.'],
         success: null,
         resumenCatalogo: null,
+      });
+    }
+  }
+
+  async descargarPdfGeneral(req, res) {
+    try {
+      const pdf = await this.chanchitosPdfService.generarReporteGeneral(req.query);
+
+      console.info('[MONIPLA][CHANCHITOS][PDF_GENERAL]', {
+        filtros: pdf.filtros,
+        totalMonitoreos: pdf.totalMonitoreos,
+      });
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${pdf.filename}"`);
+      res.setHeader('Content-Length', pdf.buffer.length);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'no-store');
+
+      return res.send(pdf.buffer);
+    } catch (error) {
+      const status = error.message === 'FILTROS_REPORTE_INVALIDOS' ? 400 : 500;
+      console.error('[MONIPLA][CHANCHITOS][PDF_GENERAL][ERROR]', {
+        filtros: req.query,
+        error: error.message,
+      });
+
+      return res.status(status).render('layouts/main', {
+        title: 'Reporte general de Chanchitos',
+        contentView: '../monitoreos/placeholder',
+        pageTitle: 'Reporte no disponible',
+        pageMessage: status === 400
+          ? 'Los filtros de fecha no son validos para generar el reporte.'
+          : 'No fue posible generar el reporte general de Chanchitos.',
       });
     }
   }

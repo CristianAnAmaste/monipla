@@ -63,6 +63,77 @@ class ChanchitosRepository {
     return result.recordset;
   }
 
+  async obtenerMonitoreosPdfGeneral(filtros = {}) {
+    const pool = await this.poolPromise;
+    const result = await pool.request()
+      .input('fechaDesde', this.sql.Date, filtros.fechaDesde || null)
+      .input('fechaHasta', this.sql.Date, filtros.fechaHasta || null)
+      .query(`
+        SELECT
+          cab.id_monitoreo,
+          cab.fecha_monitoreo,
+          cab.gen_cuartel,
+          cab.id_catalogo_sdp,
+          COALESCE(
+            LTRIM(RTRIM(CONVERT(nvarchar(100), cab.codigo_cuartel))),
+            LTRIM(RTRIM(CONVERT(nvarchar(100), gc.CODIGO))),
+            LTRIM(RTRIM(CONVERT(nvarchar(100), mb.cuartel)))
+          ) AS codigo_cuartel,
+          COALESCE(LTRIM(RTRIM(mb.fundo)), LTRIM(RTRIM(f.Nombre))) AS nombre_fundo,
+          COALESCE(LTRIM(RTRIM(mb.nombre_productor)), LTRIM(RTRIM(c.Nombre))) AS nombre_campo,
+          COALESCE(LTRIM(RTRIM(mb.variedad)), LTRIM(RTRIM(v.Nombre))) AS nombre_variedad,
+          COALESCE(
+            CONVERT(nvarchar(100), cab.sdp),
+            CONVERT(nvarchar(100), rel.sdp),
+            CONVERT(nvarchar(100), mb.sdp)
+          ) AS sdp,
+          COALESCE(
+            CONVERT(nvarchar(100), cab.CSG),
+            CONVERT(nvarchar(100), rel.csg),
+            CONVERT(nvarchar(100), mb.codigo_sag)
+          ) AS csg,
+          COALESCE(
+            CONVERT(nvarchar(100), mb.codigo_trazabilidad),
+            CONVERT(nvarchar(100), rel.trazabilidad)
+          ) AS trazabilidad,
+          LTRIM(RTRIM(ISNULL(ef.nom_estadofenologico, ''))) AS nombre_estado_fenologico,
+          cab.cant_plantas,
+          LTRIM(RTRIM(ISNULL(mon.nombre_monitoreador, ''))) AS nombre_monitoreador,
+          cab.observaciones,
+          det.id_estadomonitoreo,
+          det.id_estadoposicion,
+          det.cantidad_bichos
+        FROM dbo.MONI_CABECERAMONITOREO cab
+        LEFT JOIN dbo.MONI_DETALLEMONITOREO det
+          ON det.id_monitoreo = cab.id_monitoreo
+        LEFT JOIN dbo.MONI_MONITOREADORES mon
+          ON mon.id_monitoreador = cab.id_monitoreador
+        LEFT JOIN dbo.estado_fenologico ef
+          ON ef.id_estadofenologico = cab.id_estadofenologico
+        LEFT JOIN dbo.MONIPLA_CATALOGO_SDP_MB mb
+          ON mb.id_catalogo_sdp = cab.id_catalogo_sdp
+        LEFT JOIN dbo.GEN_CUARTEL gc
+          ON gc.GEN_CUARTEL = cab.gen_cuartel
+        LEFT JOIN dbo.GEN_FUNDO f
+          ON f.Gen_Fundo = COALESCE(gc.GEN_FUNDO, cab.gen_fundo)
+        LEFT JOIN dbo.GEN_CAMPO c
+          ON c.Gen_Campo = COALESCE(gc.GEN_CAMPO, cab.gen_campo)
+        LEFT JOIN dbo.GEN_VARIEDAD v
+          ON v.gen_variedad = COALESCE(gc.GEN_VARIEDAD, cab.gen_variedad)
+        LEFT JOIN dbo.MONIPLA_REL_CUARTEL_SDP rel
+          ON rel.gen_cuartel = cab.gen_cuartel
+        WHERE (@fechaDesde IS NULL OR cab.fecha_monitoreo >= @fechaDesde)
+          AND (@fechaHasta IS NULL OR cab.fecha_monitoreo <= @fechaHasta)
+        ORDER BY
+          cab.fecha_monitoreo DESC,
+          cab.id_monitoreo DESC,
+          det.id_estadomonitoreo ASC,
+          det.id_estadoposicion ASC
+      `);
+
+    return result.recordset;
+  }
+
   async insertarCabecera(catalogo, cabecera, transaction) {
     const request = await this.createRequest(transaction);
     const result = await request

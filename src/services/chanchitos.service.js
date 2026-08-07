@@ -4,6 +4,12 @@ const CatalogoSdpService = require('./catalogoSdp.service');
 const MAX_INT = 2147483647;
 const ESTADOS = [1, 2, 3];
 const POSICIONES = [1, 2, 3, 4];
+const MATRIZ_CANONICA = Object.freeze(
+  ESTADOS.flatMap((idEstadoMonitoreo) => POSICIONES.map((idEstadoPosicion) => Object.freeze({
+    idEstadoMonitoreo,
+    idEstadoPosicion,
+  })))
+);
 
 class ChanchitosService {
   constructor(
@@ -224,21 +230,19 @@ class ChanchitosService {
     const detalles = [];
     const errors = [];
 
-    ESTADOS.forEach((idEstadoMonitoreo) => {
-      POSICIONES.forEach((idEstadoPosicion) => {
-        const fieldName = `cantidad_${idEstadoMonitoreo}_${idEstadoPosicion}`;
-        const cantidad = this.normalizarCantidad(data[fieldName]);
+    MATRIZ_CANONICA.forEach(({ idEstadoMonitoreo, idEstadoPosicion }) => {
+      const fieldName = `cantidad_${idEstadoMonitoreo}_${idEstadoPosicion}`;
+      const cantidad = this.normalizarCantidad(data[fieldName]);
 
-        if (cantidad === null) {
-          errors.push(`La cantidad ${idEstadoMonitoreo}-${idEstadoPosicion} debe ser un entero entre 0 y ${MAX_INT}.`);
-          return;
-        }
+      if (cantidad === null) {
+        errors.push(`La cantidad ${idEstadoMonitoreo}-${idEstadoPosicion} debe ser un entero entre 0 y ${MAX_INT}.`);
+        return;
+      }
 
-        detalles.push({
-          idEstadoMonitoreo,
-          idEstadoPosicion,
-          cantidadBichos: cantidad,
-        });
+      detalles.push({
+        idEstadoMonitoreo,
+        idEstadoPosicion,
+        cantidadBichos: cantidad,
       });
     });
 
@@ -366,5 +370,7 @@ class ChanchitosService {
     return mensajes[codigo] || null;
   }
 }
+
+ChanchitosService.MATRIZ_CANONICA = MATRIZ_CANONICA;
 
 module.exports = ChanchitosService;

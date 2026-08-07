@@ -7,5 +7,6 @@ const chanchitosController = new ChanchitosController();
 
 router.get('/chanchitos/nuevo', ensureAuthenticated, chanchitosController.nuevo);
 router.post('/chanchitos', ensureAuthenticated, chanchitosController.crear);
+router.get('/chanchitos/pdf/general', ensureAuthenticated, chanchitosController.descargarPdfGeneral);
 
 module.exports = router;

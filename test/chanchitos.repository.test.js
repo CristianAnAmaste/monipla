@@ -16,7 +16,7 @@ function crearDetalles() {
   return detalles;
 }
 
-function crearRepository({ fallaCabecera = false, fallaDetalle = 0 } = {}) {
+function crearRepository({ fallaCabecera = false, fallaDetalle = 0, filasReporte = [] } = {}) {
   const state = {
     consultas: [],
     transacciones: [],
@@ -82,6 +82,10 @@ function crearRepository({ fallaCabecera = false, fallaDetalle = 0 } = {}) {
 
       if (/FROM dbo\.MONI_MONITOREADORES/.test(texto) && /WHERE id_monitoreador = @idMonitoreador/.test(texto)) {
         return { recordset: [{ id_monitoreador: 1, activo: 1 }] };
+      }
+
+      if (/FROM dbo\.MONI_CABECERAMONITOREO cab/.test(texto)) {
+        return { recordset: filasReporte };
       }
 
       throw new Error('CONSULTA_NO_ESPERADA');
@@ -265,6 +269,34 @@ test('revalida el monitoreador por ID exclusivamente en MONI_MONITOREADORES', as
   assert.match(consulta.texto, /WHERE id_monitoreador = @idMonitoreador/i);
   assert.doesNotMatch(consulta.texto, /MONIPLA_MUESTREADOR/i);
   assert.deepEqual(consulta.inputs, [{ nombre: 'idMonitoreador', tipo: 'INT', valor: 1 }]);
+});
+
+test('consulta el PDF general de Chanchitos con LEFT JOIN compatibles y filtros de fecha', async () => {
+  const filasReporte = [{ id_monitoreo: 438 }];
+  const { repository, state } = crearRepository({ filasReporte });
+
+  const filas = await repository.obtenerMonitoreosPdfGeneral({
+    fechaDesde: '2026-08-01',
+    fechaHasta: '2026-08-05',
+  });
+
+  assert.deepEqual(filas, filasReporte);
+  const consulta = state.consultas.at(-1);
+  assert.match(consulta.texto, /FROM dbo\.MONI_CABECERAMONITOREO cab/);
+  assert.match(consulta.texto, /LEFT JOIN dbo\.MONI_DETALLEMONITOREO det/);
+  assert.match(consulta.texto, /LEFT JOIN dbo\.MONIPLA_CATALOGO_SDP_MB mb/);
+  assert.match(consulta.texto, /LEFT JOIN dbo\.GEN_CUARTEL gc/);
+  assert.match(consulta.texto, /CONVERT\(nvarchar\(100\), cab\.codigo_cuartel\)/);
+  assert.match(consulta.texto, /CONVERT\(nvarchar\(100\), cab\.sdp\)/);
+  assert.match(consulta.texto, /CONVERT\(nvarchar\(100\), cab\.CSG\)/);
+  assert.match(consulta.texto, /ORDER BY\s+cab\.fecha_monitoreo DESC,\s+cab\.id_monitoreo DESC/i);
+  assert.doesNotMatch(consulta.texto, /INNER JOIN/i);
+  assert.doesNotMatch(consulta.texto, /mb\.activo/i);
+  assert.doesNotMatch(consulta.texto, /dbo\.MONIPLA_MUESTREO|dbo\.MONIPLA_RESULTADO_|dbo\.MONIPLA_MUESTREADOR/i);
+  assert.deepEqual(consulta.inputs, [
+    { nombre: 'fechaDesde', tipo: 'DATE', valor: '2026-08-01' },
+    { nombre: 'fechaHasta', tipo: 'DATE', valor: '2026-08-05' },
+  ]);
 });
 
 test('el formulario usa el ID como valor y el nombre como etiqueta del monitoreador', () => {
