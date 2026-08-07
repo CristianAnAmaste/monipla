@@ -8,6 +8,7 @@ const authRoutes = require('./routes/auth.routes');
 const homeRoutes = require('./routes/home.routes');
 const usuariosRoutes = require('./routes/usuarios.routes');
 const monitoreosRoutes = require('./routes/monitoreos.routes');
+const chanchitosRoutes = require('./routes/chanchitos.routes');
 const NavigationService = require('./services/navigation.service');
 
 const app = express();
@@ -63,6 +64,7 @@ app.use(authRoutes);
 app.use(homeRoutes);
 app.use(usuariosRoutes);
 app.use(monitoreosRoutes);
+app.use(chanchitosRoutes);
 
 app.use((req, res) => {
   res.status(404).render('layouts/main', {

@@ -1,0 +1,157 @@
+<section class="page-header">
+  <div>
+    <p class="eyebrow">Monitoreos</p>
+    <h1>Registrar Monitoreo de Chanchitos</h1>
+    <p>Seleccione el cuartel y registre la matriz completa de estados y posiciones.</p>
+  </div>
+
+  <div class="form-actions">
+    <a class="button button-secondary" href="/chanchitos/pdf/general">Descargar PDF general</a>
+    <a class="button button-secondary" href="/home">Volver al inicio</a>
+  </div>
+</section>
+
+<section class="info-panel">
+  <strong>Resolucion automatica en backend</strong>
+  <p>El sistema resuelve SDP, CSG y trazabilidad desde el catalogo compartido al guardar el monitoreo.</p>
+</section>
+
+<% if (success) { %>
+  <div class="alert alert-success" role="status"><%= success %></div>
+<% } %>
+
+<% if (errors && errors.length > 0) { %>
+  <div class="alert" role="alert">
+    <strong>Revise los datos ingresados.</strong>
+    <ul class="message-list">
+      <% errors.forEach((message) => { %>
+        <li><%= message %></li>
+      <% }) %>
+    </ul>
+  </div>
+<% } %>
+
+<% if (resumenCatalogo) { %>
+  <section class="info-panel">
+    <strong>Catalogo resuelto</strong>
+    <p>SDP: <%= resumenCatalogo.sdp %> · CSG: <%= resumenCatalogo.csg %> · Trazabilidad: <%= resumenCatalogo.trazabilidad %></p>
+  </section>
+<% } %>
+
+<div id="chanchitos-combos-error" class="alert" role="alert" hidden></div>
+
+<section class="form-panel">
+  <form id="chanchitos-form" class="form form-grid" action="/chanchitos" method="POST" autocomplete="off">
+    <div class="form-group-full monitoreo-ubicacion-grid">
+      <div class="form-group">
+        <label for="genFundo">Fundo</label>
+        <select id="genFundo" name="genFundo" data-selected="<%= values.genFundo %>" required>
+          <option value="">Seleccione un fundo</option>
+          <% opciones.fundos.forEach((item) => { %>
+            <option value="<%= item.value %>" <%= Number(values.genFundo) === Number(item.value) ? 'selected' : '' %>><%= item.label %></option>
+          <% }) %>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="genCampo">Campo / Productor</label>
+        <select id="genCampo" name="genCampo" data-selected="<%= values.genCampo %>" disabled required>
+          <option value="">Seleccione primero un fundo</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="genVariedad">Variedad</label>
+        <select id="genVariedad" name="genVariedad" data-selected="<%= values.genVariedad %>" disabled required>
+          <option value="">Seleccione primero un campo</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="idCatalogoSdp">Cuartel</label>
+        <select id="idCatalogoSdp" name="idCatalogoSdp" data-selected="<%= values.idCatalogoSdp %>" disabled required>
+          <option value="">Seleccione primero una variedad</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group-full monitoreo-catalogos-grid">
+      <div class="form-group">
+        <label for="cantPlantas">Cantidad de plantas</label>
+        <input id="cantPlantas" name="cantPlantas" type="number" min="1" step="1" value="<%= values.cantPlantas %>" required>
+      </div>
+
+      <div class="form-group">
+        <label for="fechaMonitoreo">Fecha de monitoreo</label>
+        <input id="fechaMonitoreo" name="fechaMonitoreo" type="date" value="<%= values.fechaMonitoreo %>" required>
+      </div>
+
+      <div class="form-group">
+        <label for="idEstadoFenologico">Estado fenologico</label>
+        <select id="idEstadoFenologico" name="idEstadoFenologico" required>
+          <option value="">Seleccione un estado fenologico</option>
+          <% opciones.estadosFenologicos.forEach((item) => { %>
+            <option value="<%= item.value %>" <%= Number(values.idEstadoFenologico) === Number(item.value) ? 'selected' : '' %>><%= item.label %></option>
+          <% }) %>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="idMonitoreador">Monitoreador</label>
+        <select id="idMonitoreador" name="idMonitoreador" required>
+          <option value="">Seleccione un monitoreador</option>
+          <% opciones.monitoreadores.forEach((item) => { %>
+            <option value="<%= item.id_monitoreador %>" <%= Number(values.idMonitoreador) === Number(item.id_monitoreador) ? 'selected' : '' %>><%= item.nombre_monitoreador %></option>
+          <% }) %>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group form-group-full">
+      <label for="observaciones">Observaciones</label>
+      <textarea id="observaciones" name="observaciones" rows="4" placeholder="Ingrese observaciones relevantes"><%= values.observaciones %></textarea>
+    </div>
+
+    <div class="form-group-full data-panel">
+      <h2>Matriz de monitoreo</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Estado</th>
+            <th>Base Corteza</th>
+            <th>Base Brote</th>
+            <th>Hoja</th>
+            <th>Racimo</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Ovisaco</th>
+            <% [1, 2, 3, 4].forEach((posicion) => { %>
+              <td><input name="cantidad_1_<%= posicion %>" type="number" min="0" max="2147483647" step="1" value="<%= values[`cantidad_1_${posicion}`] %>"></td>
+            <% }) %>
+          </tr>
+          <tr>
+            <th scope="row">Ninfa</th>
+            <% [1, 2, 3, 4].forEach((posicion) => { %>
+              <td><input name="cantidad_2_<%= posicion %>" type="number" min="0" max="2147483647" step="1" value="<%= values[`cantidad_2_${posicion}`] %>"></td>
+            <% }) %>
+          </tr>
+          <tr>
+            <th scope="row">Adulto</th>
+            <% [1, 2, 3, 4].forEach((posicion) => { %>
+              <td><input name="cantidad_3_<%= posicion %>" type="number" min="0" max="2147483647" step="1" value="<%= values[`cantidad_3_${posicion}`] %>"></td>
+            <% }) %>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="form-actions">
+      <a class="button button-secondary" href="/home">Cancelar</a>
+      <button id="chanchitos-submit" class="button button-primary button-fit" type="submit">Guardar monitoreo</button>
+    </div>
+  </form>
+</section>
+
+<script src="/js/chanchitos-form.js"></script>

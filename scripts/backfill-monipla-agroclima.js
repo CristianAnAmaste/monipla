@@ -3,6 +3,7 @@ function parsearArgumentos(argv) {
   let idMuestreo = null;
   let recalcular = false;
   let confirmarTodos = false;
+  let stationIdUuid = null;
 
   for (let index = 0; index < argv.length; index += 1) {
     const argumento = argv[index];
@@ -19,6 +20,25 @@ function parsearArgumentos(argv) {
 
     if (argumento === '--confirmar-todos') {
       confirmarTodos = true;
+      continue;
+    }
+
+    if (argumento === '--station-id' || argumento.startsWith('--station-id=')) {
+      const valor = argumento === '--station-id'
+        ? argv[index + 1]
+        : argumento.slice('--station-id='.length);
+      const uuid = normalizarUuid(valor);
+
+      if (!uuid || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(uuid)) {
+        throw new Error('USO_INVALIDO: --station-id requiere un UUID valido.');
+      }
+
+      stationIdUuid = uuid;
+
+      if (argumento === '--station-id') {
+        index += 1;
+      }
+
       continue;
     }
 
@@ -55,7 +75,7 @@ function parsearArgumentos(argv) {
     );
   }
 
-  return { apply, idMuestreo, recalcular, confirmarTodos };
+  return { apply, idMuestreo, recalcular, confirmarTodos, stationIdUuid };
 }
 
 function tieneValor(value) {
@@ -90,9 +110,11 @@ function clasificarSnapshotNoActualizable(snapshot) {
   return 'errores';
 }
 
-function crearResumen(candidatos) {
+function crearResumen(candidatos = 0, stationIdUuid = null) {
   return {
     candidatos,
+    candidatosEstacion: 0,
+    estacionSolicitadaUuid: stationIdUuid,
     actualizables: 0,
     actualizados: 0,
     sinCambios: 0,
@@ -101,6 +123,12 @@ function crearResumen(candidatos) {
     sinDatos: 0,
     errores: 0,
     omitidosPorConcurrencia: 0,
+    excluidosPorEstacion: 0,
+    omitidosPorEstacionResuelta: 0,
+    fechaCorteMinima: null,
+    fechaCorteMaxima: null,
+    fechasCorteDistintas: new Set(),
+    otrasEstacionesIncluidas: 0,
   };
 }
 
@@ -162,8 +190,71 @@ function resumirSnapshot(snapshot) {
   };
 }
 
-function mostrarResumen(resumen) {
-  console.info('[MONIPLA][AGROCLIMA][BACKFILL][RESUMEN]', resumen);
+function registrarFechaCorte(resumen, fechaCorte) {
+  if (!fechaCorte) {
+    return;
+  }
+
+  resumen.fechaCorteMinima = !resumen.fechaCorteMinima || fechaCorte < resumen.fechaCorteMinima
+    ? fechaCorte
+    : resumen.fechaCorteMinima;
+  resumen.fechaCorteMaxima = !resumen.fechaCorteMaxima || fechaCorte > resumen.fechaCorteMaxima
+    ? fechaCorte
+    : resumen.fechaCorteMaxima;
+  resumen.fechasCorteDistintas.add(fechaCorte);
+}
+
+function calcularFechaCorteAmericaSantiago(fechaMuestra) {
+  const fecha = String(fechaMuestra || '').trim();
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    return null;
+  }
+
+  const [year, month, day] = fecha.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    date.getUTCFullYear() !== year
+    || date.getUTCMonth() !== month - 1
+    || date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
+
+function construirDetalleCandidato(candidato, snapshotActual, snapshotPropuesto, estacionConfigurada) {
+  return {
+    idMuestreo: candidato.id_muestreo,
+    numeroMuestreo: candidato.numero_muestreo,
+    fechaMuestra: candidato.fecha_recepcion_muestra,
+    fechaCorteEsperada: calcularFechaCorteAmericaSantiago(candidato.fecha_recepcion_muestra),
+    estacionConfigurada: estacionConfigurada && estacionConfigurada.nombre_estacion || null,
+    estacionConfiguradaUuid: estacionConfigurada && normalizarUuid(estacionConfigurada.station_id_uuid),
+    estacionResuelta: snapshotPropuesto && snapshotPropuesto.nombreEstacionMeteo || null,
+    estacionResueltaUuid: snapshotPropuesto && normalizarUuid(snapshotPropuesto.estacionMeteoUuid),
+    horasFrioActuales: snapshotActual.horasFrioAcumuladas,
+    horasFrioPropuestas: snapshotPropuesto && snapshotPropuesto.horasFrioAcumuladas,
+    estadoCobertura: snapshotPropuesto && snapshotPropuesto.agroclimaObservacion || null,
+  };
+}
+
+function resumirResumen(resumen) {
+  const esVdc = resumen.estacionSolicitadaUuid === '444d144f-0cb1-4790-85cf-9efd79cd0ac6';
+
+  return {
+    ...resumen,
+    candidatosVdc: esVdc ? resumen.candidatosEstacion : null,
+    fechasCorteDistintas: resumen.fechasCorteDistintas.size,
+    confirmacionSinOtrasEstaciones: resumen.otrasEstacionesIncluidas === 0,
+  };
+}
+
+function mostrarResumen(resumen, logger = console) {
+  logger.info('[MONIPLA][AGROCLIMA][BACKFILL][RESUMEN]', resumirResumen(resumen));
 }
 
 async function cerrarConexion() {
@@ -176,60 +267,108 @@ async function cerrarConexion() {
   }
 }
 
-async function main() {
-  const AgroclimaRepository = require('../src/repositories/agroclima.repository');
-  const AgroclimaMoniplaService = require('../src/services/agroclimaMonipla.service');
-  const opciones = parsearArgumentos(process.argv.slice(2));
-  const repository = new AgroclimaRepository();
-  const agroclimaService = new AgroclimaMoniplaService(repository);
+async function ejecutarBackfill(opciones, dependencias = {}) {
+  const { repository, agroclimaService, logger = console } = dependencias;
   const candidatos = await repository.listarMuestreosPendientesBackfill(
     opciones.idMuestreo,
     opciones.recalcular
   );
-  const resumen = crearResumen(candidatos.length);
+  const resumen = crearResumen(opciones.stationIdUuid ? 0 : candidatos.length, opciones.stationIdUuid);
 
-  console.info('[MONIPLA][AGROCLIMA][BACKFILL][INICIO]', {
+  logger.info('[MONIPLA][AGROCLIMA][BACKFILL][INICIO]', {
     modo: opciones.apply ? 'apply' : 'dry-run',
     idMuestreo: opciones.idMuestreo,
     recalcular: opciones.recalcular,
+    stationIdUuid: opciones.stationIdUuid,
   });
 
   for (const candidato of candidatos) {
     let snapshot;
+    let estacionesConfiguradas = null;
+    let estacionConfigurada = null;
+
+    if (opciones.stationIdUuid) {
+      try {
+        estacionesConfiguradas = await agroclimaService.resolverEstacionesConfiguradas(
+          candidato.id_origen_muestra,
+          candidato.fecha_recepcion_muestra
+        );
+        estacionConfigurada = (estacionesConfiguradas || []).find(
+          (estacion) => estacion && estacion.station_id_uuid
+        ) || null;
+      } catch (error) {
+        resumen.errores += 1;
+        logger.error('[MONIPLA][AGROCLIMA][BACKFILL][ERROR]', {
+          idMuestreo: candidato.id_muestreo,
+          error: error.message,
+        });
+        continue;
+      }
+
+      if (
+        !estacionConfigurada
+        || normalizarUuid(estacionConfigurada.station_id_uuid) !== opciones.stationIdUuid
+      ) {
+        resumen.excluidosPorEstacion += 1;
+        continue;
+      }
+
+      resumen.candidatos += 1;
+      resumen.candidatosEstacion += 1;
+      registrarFechaCorte(
+        resumen,
+        calcularFechaCorteAmericaSantiago(candidato.fecha_recepcion_muestra)
+      );
+    }
 
     try {
       snapshot = await agroclimaService.calcularSnapshotSeguro(
         candidato.id_origen_muestra,
-        candidato.fecha_recepcion_muestra
+        candidato.fecha_recepcion_muestra,
+        null,
+        estacionesConfiguradas
       );
     } catch (error) {
       resumen.errores += 1;
-      console.error('[MONIPLA][AGROCLIMA][BACKFILL][ERROR]', {
+      logger.error('[MONIPLA][AGROCLIMA][BACKFILL][ERROR]', {
         idMuestreo: candidato.id_muestreo,
         error: error.message,
       });
       continue;
     }
 
+    const snapshotActual = crearSnapshotActual(candidato);
+    const detalleCandidato = construirDetalleCandidato(
+      candidato,
+      snapshotActual,
+      snapshot,
+      estacionConfigurada
+    );
+
+    if (
+      opciones.stationIdUuid
+      && normalizarUuid(snapshot && snapshot.estacionMeteoUuid) !== opciones.stationIdUuid
+    ) {
+      resumen.omitidosPorEstacionResuelta += 1;
+      resumen.excluidosPorEstacion += 1;
+      logger.info('[MONIPLA][AGROCLIMA][BACKFILL][OMITIDO_ESTACION]', detalleCandidato);
+      continue;
+    }
+
     if (!esSnapshotAplicable(snapshot)) {
       const clasificacion = clasificarSnapshotNoActualizable(snapshot);
       resumen[clasificacion] += 1;
-      console.info('[MONIPLA][AGROCLIMA][BACKFILL][SIN_ACTUALIZAR]', {
-        idMuestreo: candidato.id_muestreo,
+      logger.info('[MONIPLA][AGROCLIMA][BACKFILL][SIN_ACTUALIZAR]', {
+        ...detalleCandidato,
         motivo: clasificacion,
-        observacion: snapshot && snapshot.agroclimaObservacion,
       });
       continue;
     }
 
-    const snapshotActual = crearSnapshotActual(candidato);
-
     if (snapshotsIguales(snapshotActual, snapshot)) {
       resumen.sinCambios += 1;
-      console.info('[MONIPLA][AGROCLIMA][BACKFILL][SIN_CAMBIOS]', {
-        idMuestreo: candidato.id_muestreo,
-        numeroMuestreo: candidato.numero_muestreo,
-        fundo: candidato.nombre_fundo,
+      logger.info('[MONIPLA][AGROCLIMA][BACKFILL][SIN_CAMBIOS]', {
+        ...detalleCandidato,
       });
       continue;
     }
@@ -237,10 +376,8 @@ async function main() {
     resumen.actualizables += 1;
 
     if (!opciones.apply) {
-      console.info('[MONIPLA][AGROCLIMA][BACKFILL][DRY_RUN]', {
-        idMuestreo: candidato.id_muestreo,
-        numeroMuestreo: candidato.numero_muestreo,
-        fundo: candidato.nombre_fundo,
+      logger.info('[MONIPLA][AGROCLIMA][BACKFILL][DRY_RUN]', {
+        ...detalleCandidato,
         actual: resumirSnapshot(snapshotActual),
         propuesto: resumirSnapshot(snapshot),
       });
@@ -262,20 +399,31 @@ async function main() {
         }
       } else {
         resumen.omitidosPorConcurrencia += 1;
-        console.info('[MONIPLA][AGROCLIMA][BACKFILL][CONCURRENCIA]', {
-          idMuestreo: candidato.id_muestreo,
+        logger.info('[MONIPLA][AGROCLIMA][BACKFILL][CONCURRENCIA]', {
+          ...detalleCandidato,
         });
       }
     } catch (error) {
       resumen.errores += 1;
-      console.error('[MONIPLA][AGROCLIMA][BACKFILL][ERROR]', {
+      logger.error('[MONIPLA][AGROCLIMA][BACKFILL][ERROR]', {
         idMuestreo: candidato.id_muestreo,
         error: error.message,
       });
     }
   }
 
-  mostrarResumen(resumen);
+  mostrarResumen(resumen, logger);
+
+  return resumirResumen(resumen);
+}
+
+async function main() {
+  const AgroclimaRepository = require('../src/repositories/agroclima.repository');
+  const AgroclimaMoniplaService = require('../src/services/agroclimaMonipla.service');
+  const opciones = parsearArgumentos(process.argv.slice(2));
+  const repository = new AgroclimaRepository();
+  const agroclimaService = new AgroclimaMoniplaService(repository);
+  const resumen = await ejecutarBackfill(opciones, { repository, agroclimaService });
 
   if (resumen.errores > 0) {
     process.exitCode = 1;
@@ -296,4 +444,6 @@ module.exports = {
   esSnapshotAplicable,
   crearSnapshotActual,
   snapshotsIguales,
+  calcularFechaCorteAmericaSantiago,
+  ejecutarBackfill,
 };
