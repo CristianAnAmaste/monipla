@@ -8,6 +8,12 @@ class DashboardService {
         mark: 'RM',
       },
       {
+        title: 'Monitoreo Chanchito Blanco',
+        description: 'Registro de monitoreo de Chanchito Blanco.',
+        href: '/chanchitos/nuevo',
+        mark: 'CH',
+      },
+      {
         title: 'Historial de Monitoreo',
         description: 'Consulta organizada de registros capturados.',
         href: '/monitoreos/historial',

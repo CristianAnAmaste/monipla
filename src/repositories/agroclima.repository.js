@@ -164,6 +164,86 @@ class AgroclimaRepository {
     return result.recordset || [];
   }
 
+  async listarMonitoreosChanchitosAgroclima({ idMonitoreo = null, fechaDesde = null, fechaHasta = null, genFundo = null } = {}) {
+    const request = await this.createRequest();
+
+    const result = await request
+      .input('idMonitoreo', sql.Int, idMonitoreo)
+      .input('fechaDesde', sql.Date, fechaDesde)
+      .input('fechaHasta', sql.Date, fechaHasta)
+      .input('genFundo', sql.Int, genFundo)
+      .query(`
+        SELECT
+          cab.id_monitoreo,
+          cab.gen_fundo,
+          CONVERT(char(10), cab.fecha_monitoreo, 23) AS fecha_monitoreo,
+          cab.horas_frio_acumuladas AS horas_frio_actuales,
+          cab.dias_grado_acumulados AS dias_grado_actuales,
+          cab.estacion_meteo_uuid AS estacion_uuid_actual,
+          cab.nombre_estacion_meteo AS nombre_estacion_actual,
+          CONVERT(char(10), cab.fecha_corte_agroclima, 23) AS fecha_corte_actual,
+          cab.semana_iso_corte AS semana_iso_actual,
+          cab.temporada_agroclima AS temporada_actual,
+          cab.agroclima_observacion AS observacion_actual
+        FROM dbo.MONI_CABECERAMONITOREO cab
+        WHERE cab.gen_fundo IS NOT NULL
+          AND cab.fecha_monitoreo IS NOT NULL
+          AND (@idMonitoreo IS NULL OR cab.id_monitoreo = @idMonitoreo)
+          AND (@fechaDesde IS NULL OR cab.fecha_monitoreo >= @fechaDesde)
+          AND (@fechaHasta IS NULL OR cab.fecha_monitoreo <= @fechaHasta)
+          AND (@genFundo IS NULL OR cab.gen_fundo = @genFundo)
+        ORDER BY cab.id_monitoreo ASC
+      `);
+
+    return result.recordset || [];
+  }
+
+  async actualizarSnapshotChanchitosSiCoincide(idMonitoreo, snapshot, actual) {
+    const request = await this.createRequest();
+
+    const result = await request
+      .input('idMonitoreo', sql.Int, idMonitoreo)
+      .input('horasFrioAcumuladas', sql.Decimal(10, 2), snapshot.horasFrioAcumuladas ?? null)
+      .input('diasGradoAcumulados', sql.Decimal(10, 2), snapshot.diasGradoAcumulados ?? null)
+      .input('estacionMeteoUuid', sql.UniqueIdentifier, snapshot.estacionMeteoUuid || null)
+      .input('nombreEstacionMeteo', sql.NVarChar(100), snapshot.nombreEstacionMeteo || null)
+      .input('fechaCorteAgroclima', sql.Date, snapshot.fechaCorteAgroclima || null)
+      .input('semanaIsoCorte', sql.TinyInt, snapshot.semanaIsoCorte ?? null)
+      .input('temporadaAgroclima', sql.VarChar(9), snapshot.temporadaAgroclima || null)
+      .input('agroclimaObservacion', sql.NVarChar(250), snapshot.agroclimaObservacion || null)
+      .input('horasFrioActuales', sql.Decimal(10, 2), actual.horasFrioAcumuladas ?? null)
+      .input('diasGradoActuales', sql.Decimal(10, 2), actual.diasGradoAcumulados ?? null)
+      .input('estacionMeteoUuidActual', sql.UniqueIdentifier, actual.estacionMeteoUuid || null)
+      .input('nombreEstacionMeteoActual', sql.NVarChar(100), actual.nombreEstacionMeteo || null)
+      .input('fechaCorteAgroclimaActual', sql.Date, actual.fechaCorteAgroclima || null)
+      .input('semanaIsoCorteActual', sql.TinyInt, actual.semanaIsoCorte ?? null)
+      .input('temporadaAgroclimaActual', sql.VarChar(9), actual.temporadaAgroclima || null)
+      .input('agroclimaObservacionActual', sql.NVarChar(250), actual.agroclimaObservacion || null)
+      .query(`
+        UPDATE dbo.MONI_CABECERAMONITOREO
+        SET
+          horas_frio_acumuladas = @horasFrioAcumuladas,
+          dias_grado_acumulados = @diasGradoAcumulados,
+          estacion_meteo_uuid = @estacionMeteoUuid,
+          nombre_estacion_meteo = @nombreEstacionMeteo,
+          fecha_corte_agroclima = @fechaCorteAgroclima,
+          semana_iso_corte = @semanaIsoCorte,
+          temporada_agroclima = @temporadaAgroclima,
+          agroclima_observacion = @agroclimaObservacion
+        WHERE id_monitoreo = @idMonitoreo
+          AND (horas_frio_acumuladas = @horasFrioActuales OR (horas_frio_acumuladas IS NULL AND @horasFrioActuales IS NULL))
+          AND (dias_grado_acumulados = @diasGradoActuales OR (dias_grado_acumulados IS NULL AND @diasGradoActuales IS NULL))
+          AND (estacion_meteo_uuid = @estacionMeteoUuidActual OR (estacion_meteo_uuid IS NULL AND @estacionMeteoUuidActual IS NULL))
+          AND (nombre_estacion_meteo = @nombreEstacionMeteoActual OR (nombre_estacion_meteo IS NULL AND @nombreEstacionMeteoActual IS NULL))
+          AND (fecha_corte_agroclima = @fechaCorteAgroclimaActual OR (fecha_corte_agroclima IS NULL AND @fechaCorteAgroclimaActual IS NULL))
+          AND (semana_iso_corte = @semanaIsoCorteActual OR (semana_iso_corte IS NULL AND @semanaIsoCorteActual IS NULL))
+          AND (temporada_agroclima = @temporadaAgroclimaActual OR (temporada_agroclima IS NULL AND @temporadaAgroclimaActual IS NULL))
+          AND (agroclima_observacion = @agroclimaObservacionActual OR (agroclima_observacion IS NULL AND @agroclimaObservacionActual IS NULL))
+      `);
+
+    return result.rowsAffected[0] || 0;
+  }
+
   async createRequest(transaction = null) {
     if (transaction) {
       return new sql.Request(transaction);
