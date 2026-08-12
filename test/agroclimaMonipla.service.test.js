@@ -200,6 +200,28 @@ test('acepta cero como valor real si la estacion primaria tiene dias con datos',
   assert.equal(snapshot.agroclimaObservacion, 'Agroclima OK desde Meteo FEAL.');
 });
 
+test('mapea grados_dia_acumulados de MeteoFEAL al snapshot sin descartarlo', async () => {
+  const { servicio } = crearServicio({
+    [LTZ_UUID]: {
+      station_id_uuid: LTZ_UUID,
+      fecha_corte: '2026-09-04',
+      anio_corte: 2026,
+      semana_corte: 36,
+      indicador_activo: 'GRADOS_DIA',
+      horas_frio_acumuladas: null,
+      grados_dia_acumulados: 127.35,
+      dias_con_datos: 5,
+      dias_sin_datos: 0,
+      calculation_status: 'OK',
+    },
+  });
+
+  const snapshot = await servicio.calcularSnapshot(10, '2026-09-05');
+
+  assert.equal(snapshot.horasFrioAcumuladas, null);
+  assert.equal(snapshot.diasGradoAcumulados, 127.35);
+});
+
 test('no consulta el respaldo cuando Meteo FEAL tiene un error global de conexion', async () => {
   const fetchError = new Error('fetch failed');
   const { servicio, llamadas } = crearServicio({

@@ -238,6 +238,8 @@ function construirDetalleCandidato(candidato, snapshotActual, snapshotPropuesto,
     estacionResueltaUuid: snapshotPropuesto && normalizarUuid(snapshotPropuesto.estacionMeteoUuid),
     horasFrioActuales: snapshotActual.horasFrioAcumuladas,
     horasFrioPropuestas: snapshotPropuesto && snapshotPropuesto.horasFrioAcumuladas,
+    diasGradoActuales: snapshotActual.diasGradoAcumulados,
+    diasGradoPropuestos: snapshotPropuesto && snapshotPropuesto.diasGradoAcumulados,
     estadoCobertura: snapshotPropuesto && snapshotPropuesto.agroclimaObservacion || null,
   };
 }
