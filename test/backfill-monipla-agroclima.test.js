@@ -86,12 +86,14 @@ test('normaliza el UUID de --station-id sin comparar por nombre', () => {
 function crearDependenciasBackfill() {
   const actualizaciones = [];
   const logs = [];
+  const fechasMuestraConsultadas = [];
   const candidatos = [
     {
       id_muestreo: 10,
       numero_muestreo: 110,
       id_origen_muestra: 100,
       fecha_recepcion_muestra: '2026-08-05',
+      fecha_muestreo: '2026-08-10',
       horas_frio_actuales: null,
       dias_grado_actuales: null,
       estacion_uuid_actual: null,
@@ -144,23 +146,34 @@ function crearDependenciasBackfill() {
   };
   const agroclimaService = {
     resolverEstacionesConfiguradas: async (idOrigenMuestra) => estaciones[idOrigenMuestra],
-    calcularSnapshotSeguro: async (idOrigenMuestra) => ({
+    calcularSnapshotSeguro: async (idOrigenMuestra, fechaMuestra) => {
+      fechasMuestraConsultadas.push([idOrigenMuestra, fechaMuestra]);
+
+      return {
       horasFrioAcumuladas: 10,
-      diasGradoAcumulados: null,
+      diasGradoAcumulados: 24.5,
       estacionMeteoUuid: idOrigenMuestra === 102 ? NTC_UUID : VDC_UUID,
       nombreEstacionMeteo: idOrigenMuestra === 102 ? 'NTC' : 'VDC',
       fechaCorteAgroclima: '2026-08-04',
       semanaIsoCorte: 32,
       temporadaAgroclima: '2026',
       agroclimaObservacion: 'Agroclima OK desde Meteo FEAL.',
-    }),
+      };
+    },
   };
   const logger = {
     info: (...args) => logs.push(['info', ...args]),
     error: (...args) => logs.push(['error', ...args]),
   };
 
-  return { repository, agroclimaService, logger, actualizaciones, logs };
+  return {
+    repository,
+    agroclimaService,
+    logger,
+    actualizaciones,
+    logs,
+    fechasMuestraConsultadas,
+  };
 }
 
 function opcionesVdc(apply = false) {
@@ -189,6 +202,15 @@ test('dry-run procesa exclusivamente VDC y no actualiza monitoreos', async () =>
   assert.equal(resumen.fechaCorteMinima, '2026-08-04');
   assert.equal(resumen.fechaCorteMaxima, '2026-08-06');
   assert.equal(resumen.fechasCorteDistintas, 2);
+  assert.deepEqual(dependencias.fechasMuestraConsultadas, [
+    [100, '2026-08-05'],
+    [102, '2026-08-07'],
+  ]);
+  const dryRun = dependencias.logs.find(([nivel, evento]) => (
+    nivel === 'info' && evento === '[MONIPLA][AGROCLIMA][BACKFILL][DRY_RUN]'
+  ));
+  assert.equal(dryRun[2].diasGradoActuales, null);
+  assert.equal(dryRun[2].diasGradoPropuestos, 24.5);
 });
 
 test('--apply queda limitado a los mismos candidatos VDC', async () => {
