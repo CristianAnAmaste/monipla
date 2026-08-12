@@ -135,6 +135,7 @@ class ChanchitosRepository {
   }
 
   async insertarCabecera(catalogo, cabecera, transaction) {
+    const agroclima = cabecera.agroclimaSnapshot || {};
     const request = await this.createRequest(transaction);
     const result = await request
       .input('genFundo', this.sql.Int, catalogo.gen_fundo)
@@ -150,6 +151,14 @@ class ChanchitosRepository {
       .input('idMonitoreador', this.sql.Int, cabecera.idMonitoreador)
       .input('csg', this.sql.NVarChar(100), catalogo.codigo_sag)
       .input('idCatalogoSdp', this.sql.Int, catalogo.id_catalogo_sdp)
+      .input('horasFrioAcumuladas', this.sql.Decimal(10, 2), agroclima.horasFrioAcumuladas ?? null)
+      .input('diasGradoAcumulados', this.sql.Decimal(10, 2), agroclima.diasGradoAcumulados ?? null)
+      .input('estacionMeteoUuid', this.sql.UniqueIdentifier, agroclima.estacionMeteoUuid || null)
+      .input('nombreEstacionMeteo', this.sql.NVarChar(100), agroclima.nombreEstacionMeteo || null)
+      .input('fechaCorteAgroclima', this.sql.Date, agroclima.fechaCorteAgroclima || null)
+      .input('semanaIsoCorte', this.sql.TinyInt, agroclima.semanaIsoCorte ?? null)
+      .input('temporadaAgroclima', this.sql.VarChar(9), agroclima.temporadaAgroclima || null)
+      .input('agroclimaObservacion', this.sql.NVarChar(250), agroclima.agroclimaObservacion || null)
       .query(`
         INSERT INTO dbo.MONI_CABECERAMONITOREO (
           gen_fundo,
@@ -170,7 +179,15 @@ class ChanchitosRepository {
           seg_imagenmonitoreo,
           terc_imagenmonitoreo,
           CSG,
-          id_catalogo_sdp
+          id_catalogo_sdp,
+          horas_frio_acumuladas,
+          dias_grado_acumulados,
+          estacion_meteo_uuid,
+          nombre_estacion_meteo,
+          fecha_corte_agroclima,
+          semana_iso_corte,
+          temporada_agroclima,
+          agroclima_observacion
         )
         OUTPUT INSERTED.id_monitoreo
         VALUES (
@@ -192,7 +209,15 @@ class ChanchitosRepository {
           NULL,
           NULL,
           @csg,
-          @idCatalogoSdp
+          @idCatalogoSdp,
+          @horasFrioAcumuladas,
+          @diasGradoAcumulados,
+          @estacionMeteoUuid,
+          @nombreEstacionMeteo,
+          @fechaCorteAgroclima,
+          @semanaIsoCorte,
+          @temporadaAgroclima,
+          @agroclimaObservacion
         )
       `);
 

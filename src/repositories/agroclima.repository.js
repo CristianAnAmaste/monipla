@@ -138,6 +138,32 @@ class AgroclimaRepository {
     return result.recordset || [];
   }
 
+  async resolverEstacionesPorFundo(genFundo, fechaMuestra, transaction = null) {
+    const request = await this.createRequest(transaction);
+
+    const result = await request
+      .input('genFundo', sql.Int, genFundo)
+      .input('fechaMuestra', sql.Date, fechaMuestra)
+      .query(`
+        SELECT
+          fem.gen_fundo,
+          fem.station_id_uuid,
+          fem.nombre_estacion,
+          fem.prioridad
+        FROM dbo.MONIPLA_FUNDO_ESTACION_METEO fem
+        WHERE fem.gen_fundo = @genFundo
+          AND fem.activo = 1
+          AND fem.fecha_desde <= @fechaMuestra
+          AND (fem.fecha_hasta IS NULL OR fem.fecha_hasta >= @fechaMuestra)
+        ORDER BY
+          fem.prioridad ASC,
+          fem.fecha_desde DESC,
+          fem.id_fundo_estacion_meteo DESC
+      `);
+
+    return result.recordset || [];
+  }
+
   async createRequest(transaction = null) {
     if (transaction) {
       return new sql.Request(transaction);

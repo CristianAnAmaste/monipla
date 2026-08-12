@@ -7,23 +7,27 @@ const NTC_UUID = '9373a0db-6a2d-48c9-883a-f23e6f26753b';
 
 function crearServicio(respuestas) {
   const llamadas = [];
+  const fechasMuestra = [];
+  const estaciones = [
+    {
+      station_id_uuid: LTZ_UUID,
+      nombre_estacion: 'LTZ',
+      prioridad: 1,
+    },
+    {
+      station_id_uuid: NTC_UUID,
+      nombre_estacion: 'NTC',
+      prioridad: 2,
+    },
+  ];
   const agroclimaRepository = {
-    resolverEstacionesPorOrigen: async () => [
-      {
-        station_id_uuid: LTZ_UUID,
-        nombre_estacion: 'LTZ',
-        prioridad: 1,
-      },
-      {
-        station_id_uuid: NTC_UUID,
-        nombre_estacion: 'NTC',
-        prioridad: 2,
-      },
-    ],
+    resolverEstacionesPorOrigen: async () => estaciones,
+    resolverEstacionesPorFundo: async () => estaciones,
   };
   const meteoFealClient = {
-    obtenerAcumuladoAgroclimatico: async ({ stationIdUuid }) => {
+    obtenerAcumuladoAgroclimatico: async ({ stationIdUuid, fechaMuestra }) => {
       llamadas.push(stationIdUuid);
+      fechasMuestra.push([stationIdUuid, fechaMuestra]);
       const respuesta = respuestas[stationIdUuid];
 
       if (respuesta instanceof Error) {
@@ -36,9 +40,117 @@ function crearServicio(respuestas) {
 
   return {
     llamadas,
+    fechasMuestra,
     servicio: new AgroclimaMoniplaService(agroclimaRepository, meteoFealClient),
   };
 }
+
+test('Chanchitos usa la estacion primaria OK y conserva Horas Frio y Dias Grado', async () => {
+  const { servicio, llamadas, fechasMuestra } = crearServicio({
+    [LTZ_UUID]: {
+      station_id_uuid: LTZ_UUID,
+      fecha_corte: '2026-08-11',
+      anio_corte: 2026,
+      semana_corte: 33,
+      indicador_activo: 'HORAS_FRIO',
+      horas_frio_acumuladas: 430.15,
+      grados_dia_acumulados: 120.45,
+      dias_con_datos: 132,
+      dias_sin_datos: 0,
+      calculation_status: 'OK',
+    },
+  });
+
+  const snapshot = await servicio.calcularSnapshotPorFundo(10, '2026-08-12');
+
+  assert.deepEqual(llamadas, [LTZ_UUID]);
+  assert.deepEqual(fechasMuestra, [[LTZ_UUID, '2026-08-12']]);
+  assert.equal(snapshot.estacionMeteoUuid, LTZ_UUID);
+  assert.equal(snapshot.horasFrioAcumuladas, 430.15);
+  assert.equal(snapshot.diasGradoAcumulados, 120.45);
+  assert.equal(snapshot.fechaCorteAgroclima, '2026-08-11');
+});
+
+test('Chanchitos usa la secundaria cuando la primaria no tiene datos', async () => {
+  const { servicio } = crearServicio({
+    [LTZ_UUID]: {
+      station_id_uuid: LTZ_UUID,
+      fecha_corte: '2026-08-11',
+      calculation_status: 'SIN_DATOS',
+      dias_con_datos: 0,
+    },
+    [NTC_UUID]: {
+      station_id_uuid: NTC_UUID,
+      fecha_corte: '2026-08-11',
+      indicador_activo: 'GRADOS_DIA',
+      grados_dia_acumulados: 92.5,
+      dias_con_datos: 132,
+      dias_sin_datos: 0,
+      calculation_status: 'OK',
+    },
+  });
+
+  const snapshot = await servicio.calcularSnapshotPorFundo(10, '2026-08-12');
+
+  assert.equal(snapshot.estacionMeteoUuid, NTC_UUID);
+  assert.equal(snapshot.diasGradoAcumulados, 92.5);
+});
+
+test('Chanchitos prefiere secundaria completa frente a primaria parcial', async () => {
+  const { servicio } = crearServicio({
+    [LTZ_UUID]: {
+      station_id_uuid: LTZ_UUID,
+      fecha_corte: '2026-08-11',
+      indicador_activo: 'HORAS_FRIO',
+      horas_frio_acumuladas: 25,
+      dias_con_datos: 15,
+      dias_sin_datos: 117,
+      calculation_status: 'PARCIAL',
+    },
+    [NTC_UUID]: {
+      station_id_uuid: NTC_UUID,
+      fecha_corte: '2026-08-11',
+      indicador_activo: 'HORAS_FRIO',
+      horas_frio_acumuladas: 430.15,
+      dias_con_datos: 132,
+      dias_sin_datos: 0,
+      calculation_status: 'OK',
+    },
+  });
+
+  const snapshot = await servicio.calcularSnapshotPorFundo(10, '2026-08-12');
+
+  assert.equal(snapshot.estacionMeteoUuid, NTC_UUID);
+  assert.equal(snapshot.horasFrioAcumuladas, 430.15);
+});
+
+test('Chanchitos conserva la mejor estacion cuando todas tienen cobertura parcial', async () => {
+  const { servicio } = crearServicio({
+    [LTZ_UUID]: {
+      station_id_uuid: LTZ_UUID,
+      fecha_corte: '2026-08-11',
+      indicador_activo: 'HORAS_FRIO',
+      horas_frio_acumuladas: 25,
+      dias_con_datos: 15,
+      dias_sin_datos: 117,
+      calculation_status: 'PARCIAL',
+    },
+    [NTC_UUID]: {
+      station_id_uuid: NTC_UUID,
+      fecha_corte: '2026-08-11',
+      indicador_activo: 'HORAS_FRIO',
+      horas_frio_acumuladas: 410.2,
+      dias_con_datos: 130,
+      dias_sin_datos: 2,
+      calculation_status: 'PARCIAL',
+    },
+  });
+
+  const snapshot = await servicio.calcularSnapshotPorFundo(10, '2026-08-12');
+
+  assert.equal(snapshot.estacionMeteoUuid, NTC_UUID);
+  assert.equal(snapshot.horasFrioAcumuladas, 410.2);
+});
 
 test('usa la estacion de prioridad 2 cuando la primaria no tiene datos', async () => {
   const { servicio, llamadas } = crearServicio({
