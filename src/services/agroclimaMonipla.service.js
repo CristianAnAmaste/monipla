@@ -51,15 +51,59 @@ class AgroclimaMoniplaService {
     estacionesConfiguradas = null
   ) {
     const fechaMuestra = this.formatearFechaIso(fechaRecepcionMuestra);
-    const snapshot = this.crearSnapshotBase(null, null);
-
     const estaciones = estacionesConfiguradas || await this.resolverEstacionesConfiguradas(
       idOrigenMuestra,
       fechaMuestra,
       transaction
     );
 
-    const estacionesValidas = estaciones.filter((estacion) => estacion && estacion.station_id_uuid);
+    return this.calcularSnapshotConEstaciones(estaciones, fechaMuestra, { idOrigenMuestra });
+  }
+
+  async calcularSnapshotSeguroPorFundo(
+    genFundo,
+    fechaMuestra,
+    transaction = null,
+    estacionesConfiguradas = null
+  ) {
+    try {
+      return await this.calcularSnapshotPorFundo(
+        genFundo,
+        fechaMuestra,
+        transaction,
+        estacionesConfiguradas
+      );
+    } catch (error) {
+      console.error('[MONIPLA][AGROCLIMA][ERROR]', {
+        genFundo,
+        fechaMuestra,
+        error: error.message,
+      });
+
+      return this.crearSnapshotBase(null, OBSERVACIONES.ERROR);
+    }
+  }
+
+  async calcularSnapshotPorFundo(
+    genFundo,
+    fechaMuestra,
+    transaction = null,
+    estacionesConfiguradas = null
+  ) {
+    const fechaMuestraIso = this.formatearFechaIso(fechaMuestra);
+    const estaciones = estacionesConfiguradas || await this.resolverEstacionesConfiguradasPorFundo(
+      genFundo,
+      fechaMuestraIso,
+      transaction
+    );
+
+    return this.calcularSnapshotConEstaciones(estaciones, fechaMuestraIso, { genFundo });
+  }
+
+  async calcularSnapshotConEstaciones(estaciones, fechaMuestra, contexto = {}) {
+    const snapshot = this.crearSnapshotBase(null, null);
+    const estacionesValidas = (Array.isArray(estaciones) ? estaciones : [])
+      .filter((estacion) => estacion && estacion.station_id_uuid);
 
     if (estacionesValidas.length === 0) {
       return {
@@ -90,7 +134,7 @@ class AgroclimaMoniplaService {
         intentos.push({ estacion, motivo: 'ERROR' });
 
         console.error('[MONIPLA][AGROCLIMA][METEO_FEAL_ERROR]', {
-          idOrigenMuestra,
+          ...contexto,
           stationIdUuid,
           prioridad: estacion.prioridad,
           fechaMuestra,
@@ -118,7 +162,7 @@ class AgroclimaMoniplaService {
         intentos.push({ estacion, motivo: evaluacion.motivo });
 
         console.warn('[MONIPLA][AGROCLIMA][ESTACION_NO_UTILIZABLE]', {
-          idOrigenMuestra,
+          ...contexto,
           stationIdUuid,
           prioridad: estacion.prioridad,
           fechaMuestra,
@@ -160,7 +204,7 @@ class AgroclimaMoniplaService {
       );
 
       this.logDebug('SNAPSHOT', {
-        idOrigenMuestra,
+        ...contexto,
         station_id_uuid: snapshotFinal.estacionMeteoUuid,
         prioridad: estacion.prioridad,
         fecha_muestra: fechaMuestra,
@@ -179,7 +223,7 @@ class AgroclimaMoniplaService {
       );
 
       this.logDebug('SNAPSHOT', {
-        idOrigenMuestra,
+        ...contexto,
         station_id_uuid: snapshotFinal.estacionMeteoUuid,
         prioridad: mejorParcial.estacion.prioridad,
         fecha_muestra: fechaMuestra,
@@ -213,6 +257,14 @@ class AgroclimaMoniplaService {
   async resolverEstacionesConfiguradas(idOrigenMuestra, fechaMuestra, transaction = null) {
     return this.agroclimaRepository.resolverEstacionesPorOrigen(
       idOrigenMuestra,
+      fechaMuestra,
+      transaction
+    );
+  }
+
+  async resolverEstacionesConfiguradasPorFundo(genFundo, fechaMuestra, transaction = null) {
+    return this.agroclimaRepository.resolverEstacionesPorFundo(
+      genFundo,
       fechaMuestra,
       transaction
     );

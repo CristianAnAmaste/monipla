@@ -41,8 +41,19 @@ function crearServicio({
   filasCatalogo = [catalogoValido],
   monitoreador = [{ id_monitoreador: 7, nombre_monitoreador: 'Margarita Garrido', activo: 1 }],
   estado = [{ estado: 1 }],
+  agroclimaSnapshot = {
+    horasFrioAcumuladas: 430.15,
+    diasGradoAcumulados: 120.45,
+    estacionMeteoUuid: 'ec674291-52c6-416b-9f61-72bd680fd038',
+    nombreEstacionMeteo: 'LTZ',
+    fechaCorteAgroclima: '2026-08-05',
+    semanaIsoCorte: 32,
+    temporadaAgroclima: '2026',
+    agroclimaObservacion: 'Agroclima OK desde Meteo FEAL.',
+  },
 } = {}) {
   const llamadasCatalogo = [];
+  const llamadasAgroclima = [];
   const catalogoService = new CatalogoSdpService({
     findByIdActivoConSdp: async (...args) => {
       llamadasCatalogo.push(args);
@@ -57,16 +68,23 @@ function crearServicio({
       payload,
     }),
   };
+  const agroclimaService = {
+    calcularSnapshotSeguroPorFundo: async (...args) => {
+      llamadasAgroclima.push(args);
+      return agroclimaSnapshot;
+    },
+  };
 
   return {
     llamadasCatalogo,
+    llamadasAgroclima,
     repository,
-    servicio: new ChanchitosService(repository, catalogoService),
+    servicio: new ChanchitosService(repository, catalogoService, agroclimaService),
   };
 }
 
-test('construye un payload valido con las 12 combinaciones canonicas', async () => {
-  const { servicio, repository } = crearServicio();
+test('construye un payload valido con las 12 combinaciones canonicas y snapshot agroclimatico', async () => {
+  const { servicio, repository, llamadasAgroclima } = crearServicio();
   let payloadRecibido;
   repository.crearMonitoreoTransaccional = async (payload) => {
     payloadRecibido = payload;
@@ -86,6 +104,51 @@ test('construye un payload valido con las 12 combinaciones canonicas', async () 
   );
   assert.equal(payloadRecibido.detalles[6].cantidadBichos, 4);
   assert.equal(payloadRecibido.detalles.filter((detalle) => detalle.cantidadBichos === 0).length, 11);
+  assert.deepEqual(llamadasAgroclima, [[10, '2026-08-06']]);
+  assert.equal(payloadRecibido.cabecera.agroclimaSnapshot.horasFrioAcumuladas, 430.15);
+  assert.equal(payloadRecibido.cabecera.agroclimaSnapshot.diasGradoAcumulados, 120.45);
+});
+
+test('guarda Chanchitos sin estacion meteorologica con acumulados nulos', async () => {
+  const agroclimaSnapshot = {
+    horasFrioAcumuladas: null,
+    diasGradoAcumulados: null,
+    estacionMeteoUuid: null,
+    nombreEstacionMeteo: null,
+    fechaCorteAgroclima: null,
+    semanaIsoCorte: null,
+    temporadaAgroclima: null,
+    agroclimaObservacion: 'Sin estacion meteorologica asociada al fundo.',
+  };
+  const { servicio, repository } = crearServicio({ agroclimaSnapshot });
+  let payloadRecibido;
+  repository.crearMonitoreoTransaccional = async (payload) => {
+    payloadRecibido = payload;
+    return { id_monitoreo: 88 };
+  };
+
+  const result = await servicio.guardarMonitoreo(crearBody(), { id: 12 });
+
+  assert.equal(result.success, true);
+  assert.deepEqual(payloadRecibido.cabecera.agroclimaSnapshot, agroclimaSnapshot);
+});
+
+test('guarda Chanchitos cuando MeteoFEAL falla y conserva su observacion', async () => {
+  const agroclimaSnapshot = {
+    horasFrioAcumuladas: null,
+    diasGradoAcumulados: null,
+    estacionMeteoUuid: null,
+    nombreEstacionMeteo: null,
+    fechaCorteAgroclima: null,
+    semanaIsoCorte: null,
+    temporadaAgroclima: null,
+    agroclimaObservacion: 'Error al consultar Meteo FEAL.',
+  };
+  const { servicio } = crearServicio({ agroclimaSnapshot });
+
+  const result = await servicio.guardarMonitoreo(crearBody(), { id: 12 });
+
+  assert.equal(result.success, true);
 });
 
 test('rechaza usuario ausente', async () => {

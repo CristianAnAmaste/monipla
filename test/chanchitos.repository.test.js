@@ -97,6 +97,10 @@ function crearRepository({ fallaCabecera = false, fallaDetalle = 0, filasReporte
     sql: {
       Int: 'INT',
       Date: 'DATE',
+      Decimal: (precision, scale) => `DECIMAL(${precision},${scale})`,
+      UniqueIdentifier: 'UNIQUEIDENTIFIER',
+      TinyInt: 'TINYINT',
+      VarChar: (length) => `VARCHAR(${length})`,
       NVarChar: () => 'NVARCHAR',
       Transaction,
       Request,
@@ -111,7 +115,11 @@ function crearRepository({ fallaCabecera = false, fallaDetalle = 0, filasReporte
 
 function crearPayload(registro = {}) {
   const revalidaciones = [];
-  const { catalogo: catalogoSobrescrito = {}, ...payloadSobrescrito } = registro;
+  const {
+    catalogo: catalogoSobrescrito = {},
+    cabecera: cabeceraSobrescrita = {},
+    ...payloadSobrescrito
+  } = registro;
   const catalogo = {
     id_catalogo_sdp: 40,
     gen_fundo: 10,
@@ -133,6 +141,7 @@ function crearPayload(registro = {}) {
         idEstadoFenologico: 5,
         observaciones: null,
         idMonitoreador: 7,
+        ...cabeceraSobrescrita,
       },
       detalles: crearDetalles(),
       revalidarCatalogoSdp: async (transaction) => {
@@ -219,6 +228,37 @@ test('mantiene como NULL los textos opcionales nulos del catalogo', async () => 
   const inputs = obtenerInputsCabecera(state);
   assert.equal(inputs.get('codigoCuartel'), null);
   assert.equal(inputs.get('csg'), null);
+});
+
+test('persiste el snapshot agroclimatico de Chanchitos con Decimal(10,2)', async () => {
+  const { repository, state } = crearRepository();
+  const snapshot = {
+    horasFrioAcumuladas: 430.15,
+    diasGradoAcumulados: 120.45,
+    estacionMeteoUuid: 'ec674291-52c6-416b-9f61-72bd680fd038',
+    nombreEstacionMeteo: 'LTZ',
+    fechaCorteAgroclima: '2026-08-11',
+    semanaIsoCorte: 33,
+    temporadaAgroclima: '2026',
+    agroclimaObservacion: 'Agroclima OK desde Meteo FEAL.',
+  };
+  const { payload } = crearPayload({
+    cabecera: { agroclimaSnapshot: snapshot },
+  });
+
+  await repository.crearMonitoreoTransaccional(payload);
+
+  const consulta = state.consultas.find((item) => /INSERT INTO dbo\.MONI_CABECERAMONITOREO/.test(item.texto));
+  const inputs = new Map(consulta.inputs.map((input) => [input.nombre, input]));
+  assert.equal(inputs.get('horasFrioAcumuladas').tipo, 'DECIMAL(10,2)');
+  assert.equal(inputs.get('diasGradoAcumulados').tipo, 'DECIMAL(10,2)');
+  assert.equal(inputs.get('horasFrioAcumuladas').valor, 430.15);
+  assert.equal(inputs.get('diasGradoAcumulados').valor, 120.45);
+  assert.equal(inputs.get('estacionMeteoUuid').valor, snapshot.estacionMeteoUuid);
+  assert.equal(inputs.get('fechaCorteAgroclima').valor, '2026-08-11');
+  assert.equal(inputs.get('agroclimaObservacion').valor, snapshot.agroclimaObservacion);
+  assert.match(consulta.texto, /horas_frio_acumuladas/i);
+  assert.match(consulta.texto, /dias_grado_acumulados/i);
 });
 
 test('rechaza SDP nulo, indefinido, vacio o texto no valido antes del INSERT y hace rollback', async () => {

@@ -18,6 +18,12 @@ class NavigationService {
         match: ['/monitoreos/nuevo'],
       },
       {
+        label: 'Monitoreo Chanchito Blanco',
+        href: '/chanchitos/nuevo',
+        icon: 'CH',
+        match: ['/chanchitos'],
+      },
+      {
         label: 'Historial de Monitoreo',
         href: '/monitoreos/historial',
         icon: 'HM',

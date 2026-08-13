@@ -1,5 +1,6 @@
 const ChanchitosRepository = require('../repositories/chanchitos.repository');
 const CatalogoSdpService = require('./catalogoSdp.service');
+const AgroclimaMoniplaService = require('./agroclimaMonipla.service');
 
 const MAX_INT = 2147483647;
 const ESTADOS = [1, 2, 3];
@@ -14,10 +15,12 @@ const MATRIZ_CANONICA = Object.freeze(
 class ChanchitosService {
   constructor(
     chanchitosRepository = null,
-    catalogoSdpService = new CatalogoSdpService()
+    catalogoSdpService = new CatalogoSdpService(),
+    agroclimaService = new AgroclimaMoniplaService()
   ) {
     this.chanchitosRepository = chanchitosRepository || new ChanchitosRepository();
     this.catalogoSdpService = catalogoSdpService;
+    this.agroclimaService = agroclimaService;
   }
 
   async getFormularioData(values = this.getValoresIniciales()) {
@@ -44,7 +47,11 @@ class ChanchitosService {
       return validacion;
     }
 
-    const { values, detalles } = validacion;
+    const { values, detalles, catalogo } = validacion;
+    const agroclimaSnapshot = await this.agroclimaService.calcularSnapshotSeguroPorFundo(
+      catalogo.gen_fundo,
+      values.fechaMonitoreo
+    );
     const seleccion = {
       genFundo: values.genFundo,
       genCampo: values.genCampo,
@@ -60,6 +67,7 @@ class ChanchitosService {
         idEstadoFenologico: values.idEstadoFenologico,
         observaciones: values.observaciones || null,
         idMonitoreador: values.idMonitoreador,
+        agroclimaSnapshot,
       },
       detalles,
       revalidarCatalogoSdp: (transaction) => this.catalogoSdpService.resolverCanonicoPorId(
