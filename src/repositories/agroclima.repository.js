@@ -198,6 +198,61 @@ class AgroclimaRepository {
     return result.recordset || [];
   }
 
+  async listarMonitoreosChanchitosPendientesReconciliacion({ fechaDesde, fechaHasta }) {
+    const request = await this.createRequest();
+
+    const result = await request
+      .input('fechaDesde', sql.Date, fechaDesde)
+      .input('fechaHasta', sql.Date, fechaHasta)
+      .query(`
+        SELECT
+          cab.id_monitoreo,
+          cab.gen_fundo,
+          CONVERT(char(10), cab.fecha_monitoreo, 23) AS fecha_monitoreo,
+          cab.horas_frio_acumuladas AS horas_frio_actuales,
+          cab.dias_grado_acumulados AS dias_grado_actuales,
+          cab.estacion_meteo_uuid AS estacion_uuid_actual,
+          cab.nombre_estacion_meteo AS nombre_estacion_actual,
+          CONVERT(char(10), cab.fecha_corte_agroclima, 23) AS fecha_corte_actual,
+          cab.semana_iso_corte AS semana_iso_actual,
+          cab.temporada_agroclima AS temporada_actual,
+          cab.agroclima_observacion AS observacion_actual
+        FROM dbo.MONI_CABECERAMONITOREO cab
+        WHERE cab.gen_fundo IS NOT NULL
+          AND cab.fecha_monitoreo IS NOT NULL
+          AND cab.fecha_monitoreo >= @fechaDesde
+          AND cab.fecha_monitoreo <= @fechaHasta
+          AND EXISTS (
+            SELECT 1
+            FROM dbo.MONIPLA_FUNDO_ESTACION_METEO fem
+            WHERE fem.gen_fundo = cab.gen_fundo
+              AND fem.activo = 1
+              AND fem.fecha_desde <= cab.fecha_monitoreo
+              AND (fem.fecha_hasta IS NULL OR fem.fecha_hasta >= cab.fecha_monitoreo)
+          )
+          AND UPPER(ISNULL(cab.agroclima_observacion, '')) NOT LIKE '%SIN ESTACION%'
+          AND (
+            (
+              (cab.horas_frio_acumuladas IS NOT NULL OR cab.dias_grado_acumulados IS NOT NULL)
+              AND UPPER(ISNULL(cab.agroclima_observacion, '')) LIKE '%PARCIAL%'
+            )
+            OR (
+              cab.horas_frio_acumuladas IS NULL
+              AND cab.dias_grado_acumulados IS NULL
+              AND (
+                cab.agroclima_observacion IS NULL
+                OR LTRIM(RTRIM(cab.agroclima_observacion)) = ''
+                OR UPPER(cab.agroclima_observacion) LIKE '%SIN DATOS%'
+                OR UPPER(cab.agroclima_observacion) LIKE '%ERROR%'
+              )
+            )
+          )
+        ORDER BY cab.fecha_monitoreo ASC, cab.id_monitoreo ASC
+      `);
+
+    return result.recordset || [];
+  }
+
   async actualizarSnapshotChanchitosSiCoincide(idMonitoreo, snapshot, actual) {
     const request = await this.createRequest();
 

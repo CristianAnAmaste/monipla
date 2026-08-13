@@ -420,5 +420,8 @@ module.exports = {
   decidirAccion,
   formatearDecimal,
   calcularFechaCorteEsperada,
+  crearResumen,
+  detalleCandidato,
+  registrarDecision,
   ejecutarBackfill,
 };
