@@ -3,6 +3,7 @@ const path = require('path');
 const PDFDocument = require('pdfkit');
 const ChanchitosRepository = require('../repositories/chanchitos.repository');
 const ChanchitosService = require('./chanchitos.service');
+const ChanchitosPresionService = require('./chanchitosPresion.service');
 
 const ESTADOS = new Map([
   [1, 'Ovisaco'],
@@ -28,6 +29,7 @@ class ChanchitosPdfService {
   constructor(chanchitosRepository = null, options = {}) {
     this.chanchitosRepository = chanchitosRepository || new ChanchitosRepository();
     this.logoPath = options.logoPath || this.buscarLogo();
+    this.presionService = options.presionService || new ChanchitosPresionService();
   }
 
   async generarReporteGeneral(query = {}) {
@@ -54,12 +56,13 @@ class ChanchitosPdfService {
     const tiempoAgrupacionMs = Math.round(performance.now() - inicioAgrupacion);
     const generatedAt = new Date();
     const inicioRender = performance.now();
-    const buffer = await this.generarPdf({ filtros: filtrosPdf, monitoreos }, generatedAt);
+    const pdf = await this.generarPdf({ filtros: filtrosPdf, monitoreos }, generatedAt);
     const tiempoRenderMs = Math.round(performance.now() - inicioRender);
 
     return {
       filename: `monipla-chanchitos-reporte-general-${this.fechaArchivo(generatedAt)}.pdf`,
-      buffer,
+      buffer: pdf.buffer,
+      paginas: pdf.paginas,
       totalMonitoreos: monitoreos.length,
       filtros: filtrosPdf,
       metricas: {
@@ -239,7 +242,7 @@ class ChanchitosPdfService {
       const doc = new PDFDocument({
         size: 'LETTER',
         layout: 'landscape',
-        margins: { top: 36, right: 36, bottom: 42, left: 36 },
+        margins: { top: 24, right: 24, bottom: 34, left: 24 },
         bufferPages: true,
         info: {
           Title: 'Reporte general - Monitoreo de Chanchitos Blancos',
@@ -248,9 +251,10 @@ class ChanchitosPdfService {
         },
       });
       const chunks = [];
+      let paginas = 0;
 
       doc.on('data', (chunk) => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('end', () => resolve({ buffer: Buffer.concat(chunks), paginas }));
       doc.on('error', reject);
 
       try {
@@ -261,17 +265,18 @@ class ChanchitosPdfService {
             .text('No se encontraron monitoreos para los filtros aplicados.');
         } else {
           reporte.monitoreos.forEach((monitoreo) => {
-            const altura = this.calcularAlturaBloque(doc, monitoreo);
+            const altura = this.calcularAlturaFicha(doc, monitoreo);
 
             if (!this.hayEspacio(doc, altura)) {
               this.nuevaPagina(doc, reporte, generatedAt);
             }
 
-            this.dibujarBloqueMonitoreo(doc, monitoreo);
+            this.dibujarFichaMonitoreo(doc, monitoreo, altura);
           });
         }
 
         this.agregarPiesPagina(doc);
+        paginas = doc.bufferedPageRange().count;
         doc.end();
       } catch (error) {
         reject(error);
@@ -283,37 +288,37 @@ class ChanchitosPdfService {
     const x = doc.page.margins.left;
     const y = doc.y;
     const width = this.anchoUtil(doc);
-    const logoWidth = 70;
-    const altura = compacto ? 48 : 82;
+    const logoWidth = 54;
+    const altura = compacto ? 34 : 52;
 
     doc.save().roundedRect(x, y, width, altura, 4).fill(COLORS.soft).restore();
 
     if (this.logoPath) {
       try {
-        doc.image(this.logoPath, x + 10, y + 8, { fit: [logoWidth, compacto ? 30 : 42] });
+        doc.image(this.logoPath, x + 8, y + 6, { fit: [logoWidth, compacto ? 22 : 32] });
       } catch (_) {
         // El reporte continua aunque el logo no pueda leerse.
       }
     }
 
     const titleX = this.logoPath ? x + logoWidth + 18 : x + 12;
-    doc.font('Helvetica-Bold').fontSize(compacto ? 11 : 15).fillColor(COLORS.primary)
-      .text('Reporte Monitoreo Pseudococcus sp.', titleX, y + 9, {
+    doc.font('Helvetica-Bold').fontSize(compacto ? 9 : 12).fillColor(COLORS.primary)
+      .text('Reporte Monitoreo Pseudococcus sp.', titleX, y + 7, {
         width: x + width - titleX - 12,
       });
-    doc.font('Helvetica').fontSize(compacto ? 8.5 : 10).fillColor(COLORS.text)
-      .text(`Pseudococcus sp. - Generado: ${this.formatearFechaHora(generatedAt)}`, titleX, y + (compacto ? 25 : 31), {
+    doc.font('Helvetica').fontSize(compacto ? 7 : 8).fillColor(COLORS.text)
+      .text(`Generado: ${this.formatearFechaHora(generatedAt)}`, titleX, y + (compacto ? 19 : 23), {
         width: x + width - titleX - 12,
       });
 
     if (!compacto) {
-      doc.font('Helvetica').fontSize(8.5).fillColor(COLORS.muted)
-        .text(`Filtros: ${this.resumenFiltros(reporte.filtros)} - Monitoreos incluidos: ${reporte.monitoreos.length}`, titleX, y + 49, {
+      doc.font('Helvetica').fontSize(7).fillColor(COLORS.muted)
+        .text(`Filtros: ${this.resumenFiltros(reporte.filtros)} - Monitoreos: ${reporte.monitoreos.length}`, titleX, y + 36, {
           width: x + width - titleX - 12,
         });
     }
 
-    doc.y = y + altura + 10;
+    doc.y = y + altura + 6;
   }
 
   nuevaPagina(doc, reporte, generatedAt) {
@@ -456,6 +461,131 @@ class ChanchitosPdfService {
     doc.y = y + alto;
   }
 
+  calcularAlturaFicha(doc, monitoreo) {
+    const width = this.anchoUtil(doc);
+    const anchoIzquierdo = (width - 8) * 0.59;
+    const alturaLineas = this.lineasFicha(monitoreo).reduce((total, linea) => (
+      total + doc.font('Helvetica').fontSize(7.2).heightOfString(linea, { width: anchoIzquierdo, lineGap: 0 })
+    ), 0);
+    const observacion = this.normalizarObservaciones(monitoreo.observaciones);
+    const alturaObservacion = doc.font('Helvetica').fontSize(7.2)
+      .heightOfString(`Observaciones: ${observacion}`, { width: anchoIzquierdo, lineGap: 0.5 });
+    const alturaAdvertencias = monitoreo.advertencias.length
+      ? doc.font('Helvetica').fontSize(6.7).heightOfString(monitoreo.advertencias.join(' - '), { width: anchoIzquierdo }) + 3
+      : 0;
+    const altura = 20 + Math.max(
+      alturaLineas + alturaObservacion + alturaAdvertencias + 10,
+      this.alturaMatrizPresion()
+    ) + 8;
+
+    if (altura > this.altoUtilFicha(doc)) {
+      throw new Error('OBSERVACION_EXCEDE_ALTO_PAGINA');
+    }
+
+    return Math.ceil(altura);
+  }
+
+  altoUtilFicha(doc) {
+    return doc.page.height - doc.page.margins.bottom - 18 - doc.page.margins.top - 40;
+  }
+
+  lineasFicha(monitoreo) {
+    return [
+      `Campo / Productor: ${this.valor(monitoreo.campo, '-')}  |  Variedad: ${this.valor(monitoreo.variedad, '-')}`,
+      `Cuartel: ${this.valor(monitoreo.cuartel, '-')}  |  SDP: ${this.valor(monitoreo.sdp, '-')}  |  CSG: ${this.valor(monitoreo.csg, '-')}`,
+      `Estado fenologico: ${this.valor(monitoreo.estadoFenologico, '-')}  |  Monitoreador: ${this.valor(monitoreo.monitoreador, '-')}  |  Plantas: ${this.valor(monitoreo.cantPlantas, '-')}`,
+      `Trazabilidad: ${this.valor(monitoreo.trazabilidad, '-')}`,
+      `Agroclima: ${this.descripcionAgroclimaCompleto(monitoreo)}`,
+    ];
+  }
+
+  dibujarFichaMonitoreo(doc, monitoreo, altura) {
+    const x = doc.page.margins.left;
+    const width = this.anchoUtil(doc);
+    const y = doc.y;
+    const gap = 8;
+    const anchoIzquierdo = (width - gap) * 0.59;
+    const anchoDerecho = width - gap - anchoIzquierdo;
+
+    doc.save().roundedRect(x, y, width, altura, 3).fill(COLORS.white)
+      .strokeColor(COLORS.line).lineWidth(0.6).stroke().restore();
+    doc.save().roundedRect(x, y, width, 20, 3).fill(COLORS.primary).restore();
+    doc.font('Helvetica-Bold').fontSize(8.5).fillColor(COLORS.white)
+      .text(`Monitoreo #${monitoreo.idMonitoreo}  |  ${this.formatearFechaCorta(monitoreo.fechaMonitoreo)}  |  ${this.valor(monitoreo.fundo, '-')}  |  Total: ${monitoreo.totalIndividuos}`, x + 7, y + 6, { width: width - 14, lineBreak: false });
+
+    let izquierdaY = y + 26;
+    this.lineasFicha(monitoreo).forEach((linea) => {
+      const alto = doc.font('Helvetica').fontSize(7.2).heightOfString(linea, { width: anchoIzquierdo, lineGap: 0 });
+      doc.fillColor(COLORS.text).text(linea, x + 6, izquierdaY, { width: anchoIzquierdo, lineGap: 0 });
+      izquierdaY += alto + 1;
+    });
+
+    const observacion = this.normalizarObservaciones(monitoreo.observaciones);
+    doc.font('Helvetica-Bold').fontSize(7).fillColor(COLORS.muted)
+      .text('Observaciones:', x + 6, izquierdaY + 1, { width: anchoIzquierdo, lineBreak: false });
+    izquierdaY += 9;
+    doc.font('Helvetica').fontSize(7.2).fillColor(COLORS.text)
+      .text(observacion, x + 6, izquierdaY, { width: anchoIzquierdo, lineGap: 0.5 });
+
+    if (monitoreo.advertencias.length > 0) {
+      const altoObservacion = doc.heightOfString(observacion, { width: anchoIzquierdo, lineGap: 0.5 });
+      doc.font('Helvetica').fontSize(6.7).fillColor('#85503f')
+        .text(monitoreo.advertencias.join(' - '), x + 6, izquierdaY + altoObservacion + 3, { width: anchoIzquierdo, lineGap: 0 });
+    }
+
+    this.dibujarMatrizPresion(doc, monitoreo, x + anchoIzquierdo + gap, y + 25, anchoDerecho);
+    doc.y = y + altura + 6;
+  }
+
+  alturaMatrizPresion() {
+    return 12 + 16 + (4 * 20);
+  }
+
+  dibujarMatrizPresion(doc, monitoreo, x, y, width) {
+    const anchoPosicion = width * 0.31;
+    const anchoCelda = (width - anchoPosicion) / 3;
+    const widths = [anchoPosicion, anchoCelda, anchoCelda, anchoCelda];
+    doc.font('Helvetica-Bold').fontSize(7.2).fillColor(COLORS.primary)
+      .text('Matriz de presion', x, y, { width, lineBreak: false });
+    let rowY = y + 12;
+    this.dibujarFilaPresion(doc, x, rowY, ['Posicion', 'Ovisaco', 'Ninfa', 'Adulto'], widths, true);
+    rowY += 16;
+    [1, 2, 3, 4].forEach((idPosicion) => {
+      const valores = [POSICIONES.get(idPosicion)];
+      [1, 2, 3].forEach((idEstado) => {
+        valores.push(this.presionService.clasificarPresion({
+          idEstadoMonitoreo: idEstado,
+          idEstadoPosicion: idPosicion,
+          cantidad: this.obtenerCantidadMatriz(monitoreo.matriz, idEstado, idPosicion),
+          cantPlantas: monitoreo.cantPlantas,
+        }));
+      });
+      this.dibujarFilaPresion(doc, x, rowY, valores, widths, false);
+      rowY += 20;
+    });
+  }
+
+  obtenerCantidadMatriz(matriz, idEstado, idPosicion) {
+    const fila = (matriz || [])[idEstado - 1];
+    const celda = fila && fila.celdas && fila.celdas[idPosicion - 1];
+    return celda && celda.cantidad !== null ? celda.cantidad : null;
+  }
+
+  dibujarFilaPresion(doc, x, y, values, widths, encabezado) {
+    let cellX = x;
+    values.forEach((value, index) => {
+      const resultado = !encabezado && index > 0 ? value : null;
+      const alto = encabezado ? 16 : 20;
+      doc.save().fillColor(encabezado ? COLORS.soft : resultado ? resultado.color : COLORS.white)
+        .rect(cellX, y, widths[index], alto).fill()
+        .strokeColor(COLORS.line).lineWidth(0.45).rect(cellX, y, widths[index], alto).stroke().restore();
+      const texto = resultado ? (resultado.presion === null ? resultado.etiqueta : `${resultado.etiqueta} (${resultado.presion})`) : String(value);
+      doc.font(encabezado ? 'Helvetica-Bold' : 'Helvetica').fontSize(encabezado ? 6.7 : 6.3).fillColor(COLORS.text)
+        .text(texto, cellX + 2, y + (encabezado ? 5 : 6), { width: widths[index] - 4, align: index === 0 ? 'left' : 'center', lineBreak: false });
+      cellX += widths[index];
+    });
+  }
+
   agregarPiesPagina(doc) {
     const range = doc.bufferedPageRange();
 
@@ -508,6 +638,27 @@ class ChanchitosPdfService {
     if (monitoreo.horasFrio !== null) valores.push(`HF: ${monitoreo.horasFrio.toFixed(2).replace('.', ',')} h`);
     if (monitoreo.diasGrado !== null) valores.push(`DG: ${monitoreo.diasGrado.toFixed(2).replace('.', ',')}`);
     return valores.length ? valores.join(' · ') : 'Sin datos agroclimaticos';
+  }
+
+  descripcionAgroclimaCompleto(monitoreo) {
+    const valores = [];
+    if (monitoreo.horasFrio !== null) {
+      valores.push(`HF ${monitoreo.horasFrio.toFixed(2).replace('.', ',')} h`);
+    }
+    if (monitoreo.diasGrado !== null) {
+      valores.push(`DG ${monitoreo.diasGrado.toFixed(2).replace('.', ',')}`);
+    }
+
+    if (!valores.length) return 'Sin datos agroclimaticos';
+
+    const estacion = this.valor(monitoreo.estacionMeteo, '');
+    const corte = monitoreo.fechaCorteAgroclima
+      ? this.formatearFecha(monitoreo.fechaCorteAgroclima)
+      : '';
+
+    if (estacion) valores.push(estacion);
+    if (corte && corte !== '-') valores.push(`Corte ${corte}`);
+    return valores.join(' · ');
   }
 
   descripcionEstacionCorte(monitoreo) {

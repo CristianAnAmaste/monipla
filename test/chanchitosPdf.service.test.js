@@ -82,8 +82,86 @@ test('genera reporte sin filtros, agrupa una cabecera y devuelve un PDF valido',
     idEstadoFenologico: null, deteccion: '',
   }]);
   assert.equal(reporte.totalMonitoreos, 1);
+  assert.equal(reporte.paginas, 1);
   assert.equal(reporte.buffer.subarray(0, 5).toString(), '%PDF-');
   assert.match(reporte.filename, /^monipla-chanchitos-reporte-general-\d{8}\.pdf$/);
+});
+
+test('mantiene los filtros del contrato y descarta solamente pagina y pageSize', async () => {
+  const { servicio, llamadas } = crearServicio([]);
+
+  await servicio.generarReporteGeneral({
+    fechaDesde: '2026-08-01',
+    fechaHasta: '2026-08-13',
+    genFundo: '9',
+    genCampo: '12',
+    genVariedad: '18',
+    idCatalogoSdp: '44',
+    idMonitoreador: '3',
+    idEstadoFenologico: '7',
+    deteccion: 'SIN_DETECCION',
+    pagina: '4',
+    pageSize: '50',
+  });
+
+  assert.deepEqual(llamadas, [{
+    fechaDesde: '2026-08-01', fechaHasta: '2026-08-13', genFundo: 9,
+    genCampo: 12, genVariedad: 18, idCatalogoSdp: 44,
+    idMonitoreador: 3, idEstadoFenologico: 7, deteccion: 'SIN_DETECCION',
+  }]);
+});
+
+test('compacta tres monitoreos normales en una pagina y cuatro en dos paginas', async () => {
+  const filasTres = [438, 439, 440].flatMap((id_monitoreo) => filasDetalle({
+    ...nuevo438,
+    id_monitoreo,
+    observaciones: 'Observacion breve.',
+  }, [1, 2, 3, 0, 1, 2, 0, 0, 0, 0, 0, 0]));
+  const { servicio: servicioTres } = crearServicio(filasTres);
+  const reporteTres = await servicioTres.generarReporteGeneral();
+
+  assert.equal(reporteTres.totalMonitoreos, 3);
+  assert.equal(reporteTres.paginas, 1);
+
+  const filasCuatro = [438, 439, 440, 441].flatMap((id_monitoreo) => filasDetalle({
+    ...nuevo438,
+    id_monitoreo,
+    observaciones: 'Observacion breve.',
+  }, [1, 2, 3, 0, 1, 2, 0, 0, 0, 0, 0, 0]));
+  const { servicio: servicioCuatro } = crearServicio(filasCuatro);
+  const reporteCuatro = await servicioCuatro.generarReporteGeneral();
+
+  assert.equal(reporteCuatro.totalMonitoreos, 4);
+  assert.equal(reporteCuatro.paginas, 2);
+});
+
+test('presenta agroclima completo, matriz de presion y observaciones largas sin truncarlas', async () => {
+  const observacionLarga = 'Observacion extensa para validar la altura dinamica de la ficha. '.repeat(18);
+  const cabecera = {
+    ...nuevo438,
+    horas_frio_acumuladas: 431.53,
+    dias_grado_acumulados: 19.61,
+    nombre_estacion_meteo: 'NTC',
+    fecha_corte_agroclima: '2026-08-12',
+    observaciones: observacionLarga,
+  };
+  const { servicio } = crearServicio(filasDetalle(cabecera, [12, 24, 36, 0, 1, 2, 3, 4, 5, 6, 7, 8]));
+
+  const reporte = await servicio.generarReporteGeneral();
+  const [monitoreo] = servicio.agruparMonitoreos(filasDetalle(cabecera, [12, 24, 36, 0, 1, 2, 3, 4, 5, 6, 7, 8]));
+
+  assert.equal(reporte.paginas, 1);
+  assert.match(servicio.descripcionAgroclimaCompleto(monitoreo), /HF 431,53 h · DG 19,61 · NTC · Corte/);
+  assert.equal(monitoreo.totalIndividuos, 108);
+  assert.equal(monitoreo.matriz.length, 3);
+  assert.equal(monitoreo.matriz.every((fila) => fila.celdas.length === 4), true);
+  assert.equal(monitoreo.observaciones, observacionLarga.trim());
+  assert.ok(servicio.calcularAlturaFicha({
+    page: { width: 792, height: 612, margins: { left: 24, right: 24, top: 24, bottom: 34 } },
+    font() { return this; },
+    fontSize() { return this; },
+    heightOfString(texto) { return Math.ceil(String(texto).length / 75) * 8; },
+  }, monitoreo) > 136);
 });
 
 test('valida filtros de fecha y los entrega al repositorio', async () => {
