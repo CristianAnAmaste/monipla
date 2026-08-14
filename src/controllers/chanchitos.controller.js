@@ -11,6 +11,8 @@ class ChanchitosController {
     this.nuevo = this.nuevo.bind(this);
     this.crear = this.crear.bind(this);
     this.mostrarHistorial = this.mostrarHistorial.bind(this);
+    this.eliminar = this.eliminar.bind(this);
+    this.mostrarDetalleParcial = this.mostrarDetalleParcial.bind(this);
     this.mostrarDetalle = this.mostrarDetalle.bind(this);
     this.descargarPdfGeneral = this.descargarPdfGeneral.bind(this);
   }
@@ -131,6 +133,9 @@ class ChanchitosController {
   async mostrarHistorial(req, res) {
     try {
       const resultado = await this.chanchitosService.obtenerHistorial(req.query);
+      resultado.successMessage = this.getMensajeExitoHistorial(req.query);
+      resultado.error = this.getMensajeErrorHistorial(req.query);
+      resultado.puedeEliminar = Boolean(req.session && req.session.usuario && req.session.usuario.rol === 'admin');
 
       return this.renderHistorial(res.status(resultado.success ? 200 : 400), resultado);
     } catch (error) {
@@ -147,8 +152,37 @@ class ChanchitosController {
         ['No fue posible cargar el historial de Chanchito Blanco.']
       );
       resultado.opciones = opciones;
+      resultado.successMessage = this.getMensajeExitoHistorial(req.query);
+      resultado.error = this.getMensajeErrorHistorial(req.query);
+      resultado.puedeEliminar = Boolean(req.session && req.session.usuario && req.session.usuario.rol === 'admin');
 
       return this.renderHistorial(res.status(500), resultado);
+    }
+  }
+
+  async eliminar(req, res) {
+    const idMonitoreo = req.params.id;
+    const filtros = req.body || {};
+
+    try {
+      const result = await this.chanchitosService.eliminarMonitoreo(
+        idMonitoreo,
+        req.session && req.session.usuario
+      );
+      console.info('[MONIPLA][CHANCHITOS][ELIMINAR]', {
+        idMonitoreo,
+        success: result.success,
+        reason: result.reason || null,
+      });
+
+      return res.redirect(this.construirUrlHistorial(filtros, result.success ? 'eliminado' : result.reason));
+    } catch (error) {
+      console.error('[MONIPLA][CHANCHITOS][ELIMINAR][ERROR]', {
+        idMonitoreo,
+        error: error.message,
+      });
+
+      return res.redirect(this.construirUrlHistorial(filtros, 'ERROR_ELIMINACION'));
     }
   }
 
@@ -176,6 +210,26 @@ class ChanchitosController {
     }
   }
 
+  async mostrarDetalleParcial(req, res) {
+    try {
+      const detalle = await this.chanchitosService.obtenerDetalle(req.params.id);
+
+      return res.render('chanchitos/partials/detalle-monitoreo', { detalle });
+    } catch (error) {
+      const status = error.message === 'CHANCHITO_NO_EXISTE' ? 404 : 500;
+      console.error('[MONIPLA][CHANCHITOS][DETALLE_PARCIAL][ERROR]', {
+        id: req.params.id,
+        error: error.message,
+      });
+
+      return res.status(status).render('chanchitos/partials/detalle-error', {
+        message: status === 404
+          ? 'El monitoreo de Chanchito Blanco solicitado no existe.'
+          : 'No fue posible cargar el detalle del monitoreo.',
+      });
+    }
+  }
+
   renderNuevo(res, data) {
     return res.render('layouts/main', {
       title: 'Registrar Monitoreo de Chanchitos',
@@ -193,12 +247,67 @@ class ChanchitosController {
       title: 'Historial Chanchito Blanco',
       contentView: '../chanchitos/historial',
       errors: data.errors || [],
+      success: data.successMessage || null,
+      error: data.error || null,
+      puedeEliminar: Boolean(data.puedeEliminar),
       values: data.values,
       opciones: data.opciones || { fundos: [], monitoreadores: [], estadosFenologicos: [] },
       registros: data.registros || [],
       resumen: data.resumen,
       paginacion: data.paginacion,
     });
+  }
+
+  construirUrlHistorial(body = {}, estado = '') {
+    const values = this.chanchitosService.normalizarFiltrosHistorial(body);
+    const params = new URLSearchParams();
+    const filtrosPermitidos = [
+      'fechaDesde',
+      'fechaHasta',
+      'genFundo',
+      'genCampo',
+      'genVariedad',
+      'idCatalogoSdp',
+      'idMonitoreador',
+      'idEstadoFenologico',
+      'deteccion',
+      'pagina',
+      'pageSize',
+    ];
+
+    filtrosPermitidos.forEach((key) => {
+      if (values[key]) {
+        params.set(key, values[key]);
+      }
+    });
+
+    if (estado === 'eliminado') {
+      params.set('eliminado', '1');
+    } else if (estado === 'CHANCHITO_NO_EXISTE') {
+      params.set('error', 'no-encontrado');
+    } else if (estado === 'NO_AUTORIZADO') {
+      params.set('error', 'no-autorizado');
+    } else {
+      params.set('error', 'eliminacion');
+    }
+
+    return `/chanchitos/historial?${params.toString()}`;
+  }
+
+  getMensajeExitoHistorial(query = {}) {
+    return query.eliminado === '1'
+      ? 'Monitoreo de Chanchito Blanco eliminado correctamente.'
+      : null;
+  }
+
+  getMensajeErrorHistorial(query = {}) {
+    const mensajes = {
+      'no-encontrado': 'El monitoreo seleccionado ya no existe o fue eliminado anteriormente.',
+      'no-autorizado': 'No tiene permisos para eliminar monitoreos.',
+      eliminacion: 'No fue posible eliminar el monitoreo. Intente nuevamente.',
+    };
+
+    return mensajes[query.error] || null;
   }
 }
 

@@ -72,9 +72,11 @@ test('normaliza filtros, conserva paginacion y presenta historicos sin id_catalo
   assert.equal(resultado.registros[0].totalBichos, 7);
   assert.equal(resultado.registros[0].agroclima.diasGrado, '4.36');
   assert.equal(resultado.resumen.totalBichos, 91);
-  assert.deepEqual(llamadas.map(([nombre]) => nombre), ['consolidado']);
+  assert.deepEqual(llamadas.map(([nombre]) => nombre), ['consolidado', 'consolidado']);
   assert.equal(llamadas[0][2], 9);
   assert.equal(llamadas[0][3], 25);
+  assert.equal(llamadas[1][2], 2);
+  assert.equal(llamadas[1][3], 25);
 });
 
 test('valida rangos de fecha sin consultar el repositorio', async () => {
@@ -183,12 +185,53 @@ test('la URL de PDF usa valores actuales del formulario y excluye paginacion', (
   assert.doesNotMatch(url, /pageSize|pagina/);
 });
 
+test('el historial usa filas de detalle diferido y el frontend conserva una sola carga por monitoreo', () => {
+  const vista = fs.readFileSync(path.join(__dirname, '..', 'src', 'views', 'chanchitos', 'historial.ejs'), 'utf8');
+  const script = fs.readFileSync(path.join(__dirname, '..', 'src', 'public', 'js', 'chanchitos-historial.js'), 'utf8');
+  const { construirUrlDetalleParcialChanchitos } = require('../src/public/js/chanchitos-historial');
+
+  assert.match(vista, /type="button" data-action="toggle-detalle" data-id-monitoreo="<%= registro\.idMonitoreo %>" aria-expanded="false"/);
+  assert.match(vista, /<tr class="historial-detail-row" data-detail-row="<%= registro\.idMonitoreo %>" hidden>/);
+  assert.match(vista, /<td colspan="9"><div class="historial-detail-container" data-detail-container="<%= registro\.idMonitoreo %>"><\/div><\/td>/);
+  assert.doesNotMatch(vista, /href="\/chanchitos\/<%= registro\.idMonitoreo %>"/);
+  assert.equal(construirUrlDetalleParcialChanchitos('440'), '/chanchitos/440/detalle-parcial');
+  assert.equal(construirUrlDetalleParcialChanchitos('440x'), null);
+  assert.match(script, /const detallesCargados = new Set\(\)/);
+  assert.match(script, /if \(detallesCargados\.has\(idMonitoreo\)\) return/);
+  assert.match(script, /cerrarDetalleActual\(\);/);
+  assert.match(script, /button\.textContent = 'Ocultar detalle';/);
+  assert.match(script, /actual\.button\.setAttribute\('aria-expanded', 'false'\)/);
+});
+
+test('el historial limita la eliminacion a admin y conserva modal, filtros y detalle desplegable', () => {
+  const vista = fs.readFileSync(path.join(__dirname, '..', 'src', 'views', 'chanchitos', 'historial.ejs'), 'utf8');
+  const script = fs.readFileSync(path.join(__dirname, '..', 'src', 'public', 'js', 'chanchitos-historial.js'), 'utf8');
+  const { construirUrlEliminarChanchitos } = require('../src/public/js/chanchitos-historial');
+
+  assert.match(vista, /<% if \(puedeEliminar\) \{ %>/);
+  assert.match(vista, /data-action="confirmar-eliminacion"/);
+  ['data-id-monitoreo', 'data-fecha-monitoreo', 'data-fundo', 'data-campo', 'data-variedad', 'data-cuartel', 'data-sdp', 'data-cant-plantas', 'data-total-bichos', 'data-monitoreador'].forEach((atributo) => assert.match(vista, new RegExp(atributo)));
+  assert.match(vista, /id="chanchitos-eliminar-modal"/);
+  assert.match(vista, /<form id="chanchitos-eliminar-form" method="POST">/);
+  assert.match(vista, /Eliminar monitoreo/);
+  assert.match(vista, /Esta acción es irreversible\./);
+  ['fechaDesde', 'fechaHasta', 'genFundo', 'genCampo', 'genVariedad', 'idCatalogoSdp', 'idMonitoreador', 'idEstadoFenologico', 'deteccion', 'pagina', 'pageSize'].forEach((filtro) => assert.match(vista, new RegExp(`'${filtro}'`)));
+  assert.equal(construirUrlEliminarChanchitos('440'), '/chanchitos/440/eliminar');
+  assert.equal(construirUrlEliminarChanchitos('440x'), null);
+  assert.match(script, /confirmarEliminacion\.disabled = true/);
+  assert.match(script, /cerrarDetalleActual\(\);/);
+  assert.match(script, /data-close-chanchitos-delete-modal/);
+});
+
 test('las rutas de historial y detalle exigen autenticacion y el detalle inexistente responde 404', async () => {
   const rutas = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'chanchitos.routes.js'), 'utf8');
   assert.match(rutas, /router\.get\('\/chanchitos\/historial', ensureAuthenticated, chanchitosController\.mostrarHistorial\)/);
+  assert.match(rutas, /router\.post\('\/chanchitos\/:id\/eliminar', ensureAuthenticated, ensureAdmin, chanchitosController\.eliminar\)/);
+  assert.match(rutas, /router\.get\('\/chanchitos\/:id\/detalle-parcial', ensureAuthenticated, chanchitosController\.mostrarDetalleParcial\)/);
   assert.match(rutas, /router\.get\('\/chanchitos\/:id', ensureAuthenticated, chanchitosController\.mostrarDetalle\)/);
   assert.ok(rutas.indexOf("'/chanchitos/historial'") < rutas.indexOf("'/chanchitos/:id'"));
   assert.ok(rutas.indexOf("'/chanchitos/pdf/general'") < rutas.indexOf("'/chanchitos/:id'"));
+  assert.ok(rutas.indexOf("'/chanchitos/:id/detalle-parcial'") < rutas.indexOf("'/chanchitos/:id'"));
 
   const controller = new ChanchitosController({
     obtenerDetalle: async () => { throw new Error('CHANCHITO_NO_EXISTE'); },

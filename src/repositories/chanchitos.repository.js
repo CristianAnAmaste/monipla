@@ -934,6 +934,94 @@ class ChanchitosRepository {
     }
   }
 
+  async bloquearMonitoreoChanchitosParaEliminacion(idMonitoreo, transaction) {
+    const request = await this.createRequest(transaction);
+    const result = await request
+      .input('idMonitoreo', this.sql.Int, idMonitoreo)
+      .query(`
+        SELECT id_monitoreo
+        FROM dbo.MONI_CABECERAMONITOREO WITH (UPDLOCK, HOLDLOCK)
+        WHERE id_monitoreo = @idMonitoreo
+      `);
+
+    return result.recordset.length === 1 ? result.recordset[0] : null;
+  }
+
+  async contarImagenesMonitoreoChanchitos(idMonitoreo, transaction) {
+    const request = await this.createRequest(transaction);
+    const result = await request
+      .input('idMonitoreo', this.sql.Int, idMonitoreo)
+      .query(`
+        SELECT COUNT(*) AS cantidad_imagenes
+        FROM dbo.MONI_IMAGENES
+        WHERE id_monitoreo = @idMonitoreo
+      `);
+
+    return Number(result.recordset[0] && result.recordset[0].cantidad_imagenes || 0);
+  }
+
+  async eliminarDetallesMonitoreoChanchitos(idMonitoreo, transaction) {
+    const request = await this.createRequest(transaction);
+    const result = await request
+      .input('idMonitoreo', this.sql.Int, idMonitoreo)
+      .query(`
+        DELETE FROM dbo.MONI_DETALLEMONITOREO
+        WHERE id_monitoreo = @idMonitoreo
+      `);
+
+    return Number(result.rowsAffected[0] || 0);
+  }
+
+  async eliminarCabeceraMonitoreoChanchitos(idMonitoreo, transaction) {
+    const request = await this.createRequest(transaction);
+    const result = await request
+      .input('idMonitoreo', this.sql.Int, idMonitoreo)
+      .query(`
+        DELETE FROM dbo.MONI_CABECERAMONITOREO
+        WHERE id_monitoreo = @idMonitoreo
+      `);
+
+    return Number(result.rowsAffected[0] || 0);
+  }
+
+  async eliminarMonitoreoTransaccional(idMonitoreo) {
+    const pool = await this.poolPromise;
+    const transaction = new this.sql.Transaction(pool);
+    let transactionStarted = false;
+
+    try {
+      await transaction.begin();
+      transactionStarted = true;
+
+      const monitoreo = await this.bloquearMonitoreoChanchitosParaEliminacion(idMonitoreo, transaction);
+
+      if (!monitoreo) {
+        throw new Error('CHANCHITO_NO_EXISTE');
+      }
+
+      if (await this.contarImagenesMonitoreoChanchitos(idMonitoreo, transaction) > 0) {
+        throw new Error('CHANCHITO_CON_IMAGENES');
+      }
+
+      const detallesEliminados = await this.eliminarDetallesMonitoreoChanchitos(idMonitoreo, transaction);
+      const cabecerasEliminadas = await this.eliminarCabeceraMonitoreoChanchitos(idMonitoreo, transaction);
+
+      if (cabecerasEliminadas !== 1) {
+        throw new Error('ELIMINACION_CHANCHITO_INCONSISTENTE');
+      }
+
+      await transaction.commit();
+
+      return { idMonitoreo, detallesEliminados };
+    } catch (error) {
+      if (transactionStarted) {
+        await transaction.rollback();
+      }
+
+      throw error;
+    }
+  }
+
   async createRequest(transaction = null) {
     if (transaction) {
       return new this.sql.Request(transaction);

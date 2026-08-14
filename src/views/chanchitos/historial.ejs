@@ -8,6 +8,7 @@
     query.set('pagina', pagina);
     return `/chanchitos/historial?${query.toString()}`;
   };
+  const filtrosRetorno = ['fechaDesde', 'fechaHasta', 'genFundo', 'genCampo', 'genVariedad', 'idCatalogoSdp', 'idMonitoreador', 'idEstadoFenologico', 'deteccion', 'pagina', 'pageSize'];
   const buildPdfUrl = () => {
     const query = new URLSearchParams();
     ['fechaDesde', 'fechaHasta', 'genFundo', 'genCampo', 'genVariedad', 'idCatalogoSdp', 'idMonitoreador', 'idEstadoFenologico', 'deteccion'].forEach((key) => {
@@ -33,6 +34,8 @@
 <% if (errors.length > 0) { %>
   <div class="alert" role="alert"><strong>Revise los filtros.</strong><ul class="message-list"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul></div>
 <% } %>
+<% if (success) { %><div class="alert alert-success" role="status"><%= success %></div><% } %>
+<% if (error) { %><div class="alert" role="alert"><%= error %></div><% } %>
 
 <section class="chanchitos-summary-grid" aria-label="Resumen del historial">
   <article class="info-panel chanchitos-summary-card"><span>Monitoreos filtrados</span><strong><%= resumen.totalMonitoreos %></strong></article>
@@ -64,7 +67,7 @@
     <div class="empty-state"><strong>No hay monitoreos para los filtros seleccionados.</strong><p>Ajuste los filtros o vuelva a ver todos los registros.</p><a class="button button-secondary button-fit" href="/chanchitos/historial">Limpiar filtros</a></div>
   <% } else { %>
     <div class="table-wrap chanchitos-history-table-wrap"><table class="data-table chanchitos-history-table"><thead><tr><th>Fecha</th><th>Fundo / Productor</th><th>Variedad / Cuartel</th><th>SDP</th><th>Plantas</th><th>Total bichos</th><th>Monitoreador</th><th>Agroclima</th><th>Acción</th></tr></thead><tbody>
-      <% registros.forEach((registro) => { %><tr>
+      <% registros.forEach((registro) => { %><tr data-history-row="<%= registro.idMonitoreo %>">
         <td data-label="Fecha"><strong><%= registro.fechaMonitoreo %></strong></td>
         <td data-label="Fundo / Productor"><strong><%= registro.fundo %></strong><span><%= registro.campo %></span></td>
         <td data-label="Variedad / Cuartel"><strong><%= registro.variedad %></strong><span><%= registro.cuartel %></span></td>
@@ -72,9 +75,71 @@
         <td data-label="Total bichos"><span class="chanchitos-detection <%= registro.tieneDeteccion ? 'is-positive' : 'is-zero' %>"><%= registro.totalBichos %></span></td>
         <td data-label="Monitoreador"><%= registro.monitoreador %></td>
         <td data-label="Agroclima"><% if (registro.agroclima.tieneDatos) { %><strong><%= registro.agroclima.horasFrio !== null ? `HF ${registro.agroclima.horasFrio}` : `DG ${registro.agroclima.diasGrado}` %></strong><span><%= registro.agroclima.estacion %></span><% } else { %><span class="chanchitos-agro-empty">Sin datos</span><% } %></td>
-        <td data-label="Acción"><a class="button button-secondary button-small" href="/chanchitos/<%= registro.idMonitoreo %>">Ver detalle</a></td>
+        <td data-label="Acción">
+          <div class="historial-actions">
+            <button class="button button-secondary button-small" type="button" data-action="toggle-detalle" data-id-monitoreo="<%= registro.idMonitoreo %>" aria-expanded="false">Ver detalle</button>
+            <% if (puedeEliminar) { %>
+              <button
+                class="button button-danger button-small"
+                type="button"
+                data-action="confirmar-eliminacion"
+                data-id-monitoreo="<%= registro.idMonitoreo %>"
+                data-fecha-monitoreo="<%= registro.fechaMonitoreo %>"
+                data-fundo="<%= registro.fundo %>"
+                data-campo="<%= registro.campo %>"
+                data-variedad="<%= registro.variedad %>"
+                data-cuartel="<%= registro.cuartel %>"
+                data-sdp="<%= registro.sdp %>"
+                data-cant-plantas="<%= registro.cantPlantas %>"
+                data-total-bichos="<%= registro.totalBichos %>"
+                data-monitoreador="<%= registro.monitoreador %>"
+              >Eliminar</button>
+            <% } %>
+          </div>
+        </td>
+      </tr>
+      <tr class="historial-detail-row" data-detail-row="<%= registro.idMonitoreo %>" hidden>
+        <td colspan="9"><div class="historial-detail-container" data-detail-container="<%= registro.idMonitoreo %>"></div></td>
       </tr><% }) %>
     </tbody></table></div>
     <nav class="pagination" aria-label="Paginación historial Chanchito Blanco"><a class="button button-secondary button-fit <%= paginacion.pagina <= 1 ? 'is-disabled' : '' %>" href="<%= paginacion.pagina <= 1 ? '#' : buildPageUrl(paginacion.pagina - 1) %>">Anterior</a><span>Página <%= paginacion.pagina %> de <%= paginacion.totalPaginas %></span><a class="button button-secondary button-fit <%= paginacion.pagina >= paginacion.totalPaginas ? 'is-disabled' : '' %>" href="<%= paginacion.pagina >= paginacion.totalPaginas ? '#' : buildPageUrl(paginacion.pagina + 1) %>">Siguiente</a></nav>
   <% } %>
 </section>
+
+<% if (puedeEliminar) { %>
+  <div id="chanchitos-eliminar-modal" class="modal-shell is-hidden" hidden aria-hidden="true">
+    <div class="modal-backdrop" data-close-chanchitos-delete-modal="true"></div>
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="chanchitos-eliminar-title">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Acción irreversible</p>
+          <h2 id="chanchitos-eliminar-title">¿Eliminar este monitoreo?</h2>
+          <p>Esta acción es irreversible.</p>
+        </div>
+        <button class="modal-close" type="button" data-close-chanchitos-delete-modal="true" aria-label="Cerrar confirmación">x</button>
+      </div>
+      <section class="summary-panel">
+        <h3>Monitoreo seleccionado</h3>
+        <dl class="summary-list">
+          <div><dt>ID</dt><dd data-chanchitos-delete-summary="id">-</dd></div>
+          <div><dt>Fecha</dt><dd data-chanchitos-delete-summary="fecha">-</dd></div>
+          <div><dt>Fundo / Productor</dt><dd data-chanchitos-delete-summary="origen">-</dd></div>
+          <div><dt>Variedad / Cuartel</dt><dd data-chanchitos-delete-summary="ubicacion">-</dd></div>
+          <div><dt>SDP</dt><dd data-chanchitos-delete-summary="sdp">-</dd></div>
+          <div><dt>Plantas</dt><dd data-chanchitos-delete-summary="plantas">-</dd></div>
+          <div><dt>Total bichos</dt><dd data-chanchitos-delete-summary="bichos">-</dd></div>
+          <div><dt>Monitoreador</dt><dd data-chanchitos-delete-summary="monitoreador">-</dd></div>
+        </dl>
+      </section>
+      <p>Se eliminará el monitoreo de Chanchito Blanco y todos sus registros de detalle asociados.</p>
+      <p>No se eliminarán el catálogo SDP, los datos agrícolas, el monitoreador ni los datos agroclimáticos externos.</p>
+      <form id="chanchitos-eliminar-form" method="POST">
+        <% filtrosRetorno.forEach((key) => { %><input type="hidden" name="<%= key %>" value="<%= values[key] || '' %>"><% }) %>
+        <div class="form-actions modal-actions">
+          <button class="button button-secondary button-fit" type="button" data-close-chanchitos-delete-modal="true">Cancelar</button>
+          <button id="chanchitos-confirmar-eliminacion" class="button button-danger button-fit" type="submit">Eliminar monitoreo</button>
+        </div>
+      </form>
+    </section>
+  </div>
+<% } %>

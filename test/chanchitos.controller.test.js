@@ -33,3 +33,92 @@ test('la ruta del PDF general exige autenticacion', () => {
 
   assert.match(rutas, /router\.get\('\/chanchitos\/pdf\/general', ensureAuthenticated, chanchitosController\.descargarPdfGeneral\)/);
 });
+
+test('el detalle parcial reutiliza obtenerDetalle y renderiza solo el fragmento', async () => {
+  const llamadas = [];
+  const controller = new ChanchitosController({
+    obtenerDetalle: async (idMonitoreo) => {
+      llamadas.push(idMonitoreo);
+      return { idMonitoreo: 440, matriz: [] };
+    },
+  }, {});
+  const response = {
+    render(view, data) { this.view = view; this.data = data; return data; },
+  };
+
+  await controller.mostrarDetalleParcial({ params: { id: '440' } }, response);
+
+  assert.deepEqual(llamadas, ['440']);
+  assert.equal(response.view, 'chanchitos/partials/detalle-monitoreo');
+  assert.equal(response.data.detalle.idMonitoreo, 440);
+  assert.notEqual(response.view, 'layouts/main');
+});
+
+test('el detalle parcial responde fragmentos de error para 404 y 500', async () => {
+  for (const [errorMessage, statusEsperado] of [['CHANCHITO_NO_EXISTE', 404], ['FALLA_SQL', 500]]) {
+    const controller = new ChanchitosController({
+      obtenerDetalle: async () => { throw new Error(errorMessage); },
+    }, {});
+    const response = {
+      statusCode: 200,
+      status(code) { this.statusCode = code; return this; },
+      render(view, data) { this.view = view; this.data = data; return data; },
+    };
+
+    await controller.mostrarDetalleParcial({ params: { id: '999' } }, response);
+
+    assert.equal(response.statusCode, statusEsperado);
+    assert.equal(response.view, 'chanchitos/partials/detalle-error');
+    assert.notEqual(response.view, 'layouts/main');
+  }
+});
+
+test('eliminar redirige con exito, filtros y paginacion preservados', async () => {
+  const llamadas = [];
+  const controller = new ChanchitosController({
+    eliminarMonitoreo: async (...args) => {
+      llamadas.push(args);
+      return { success: true, idMonitoreo: 440, detallesEliminados: 12 };
+    },
+    normalizarFiltrosHistorial: (values) => ({
+      fechaDesde: values.fechaDesde || null,
+      fechaHasta: values.fechaHasta || null,
+      genFundo: Number(values.genFundo) || null,
+      genCampo: Number(values.genCampo) || null,
+      genVariedad: null,
+      idCatalogoSdp: null,
+      idMonitoreador: null,
+      idEstadoFenologico: null,
+      deteccion: values.deteccion || '',
+      pagina: Number(values.pagina) || 1,
+      pageSize: Number(values.pageSize) || 10,
+    }),
+  }, {});
+  const response = { redirect(url) { this.url = url; return url; } };
+  const body = { fechaDesde: '2026-08-01', fechaHasta: '2026-08-13', genFundo: '8', genCampo: '26', deteccion: 'CON_DETECCION', pagina: '2', pageSize: '25' };
+
+  await controller.eliminar({ params: { id: '440' }, body, session: { usuario: { id: 1, rol: 'admin' } } }, response);
+
+  assert.deepEqual(llamadas, [['440', { id: 1, rol: 'admin' }]]);
+  assert.match(response.url, /^\/chanchitos\/historial\?/);
+  ['fechaDesde=2026-08-01', 'genFundo=8', 'genCampo=26', 'deteccion=CON_DETECCION', 'pagina=2', 'pageSize=25', 'eliminado=1'].forEach((item) => assert.match(response.url, new RegExp(item)));
+});
+
+test('eliminar traduce ausencia y errores inesperados a mensajes controlados', async () => {
+  const crearController = (resultado) => new ChanchitosController({
+    eliminarMonitoreo: async () => {
+      if (resultado instanceof Error) throw resultado;
+      return resultado;
+    },
+    normalizarFiltrosHistorial: () => ({ pagina: 1, pageSize: 10, deteccion: '' }),
+  }, {});
+
+  for (const [resultado, esperado] of [
+    [{ success: false, reason: 'CHANCHITO_NO_EXISTE' }, 'error=no-encontrado'],
+    [new Error('FALLA_SQL'), 'error=eliminacion'],
+  ]) {
+    const response = { redirect(url) { this.url = url; return url; } };
+    await crearController(resultado).eliminar({ params: { id: '999' }, body: {}, session: { usuario: { rol: 'admin' } } }, response);
+    assert.match(response.url, new RegExp(esperado));
+  }
+});

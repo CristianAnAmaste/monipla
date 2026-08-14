@@ -117,14 +117,17 @@ class ChanchitosService {
       return this.crearResultadoHistorialInvalido(values, errors);
     }
 
-    const [consulta, opciones] = await Promise.all([
+    const [consultaInicial, opciones] = await Promise.all([
       this.chanchitosRepository.obtenerHistorialConsolidado(values, values.pagina, values.pageSize),
       this.obtenerOpcionesHistorial(),
     ]);
-    const resumen = consulta.resumen;
-    const totalRegistros = Number(consulta.totalRegistros || 0);
+    const totalRegistros = Number(consultaInicial.totalRegistros || 0);
     const totalPaginas = Math.max(1, Math.ceil(totalRegistros / values.pageSize));
     const pagina = Math.min(values.pagina, totalPaginas);
+    const consulta = pagina === values.pagina
+      ? consultaInicial
+      : await this.chanchitosRepository.obtenerHistorialConsolidado(values, pagina, values.pageSize);
+    const resumen = consulta.resumen;
     const filtros = { ...values, pagina };
     const detallesPorMonitoreo = new Map();
     (consulta.detalles || []).forEach((detalle) => {
@@ -157,6 +160,34 @@ class ChanchitosService {
         totalPaginas,
       },
     };
+  }
+
+  async eliminarMonitoreo(idMonitoreo, usuarioSesion) {
+    const id = this.normalizarId(idMonitoreo);
+
+    if (!id) {
+      return { success: false, reason: 'ID_INVALIDO' };
+    }
+
+    if (!usuarioSesion || usuarioSesion.rol !== 'admin') {
+      return { success: false, reason: 'NO_AUTORIZADO' };
+    }
+
+    try {
+      const eliminado = await this.chanchitosRepository.eliminarMonitoreoTransaccional(id);
+
+      return {
+        success: true,
+        idMonitoreo: eliminado.idMonitoreo,
+        detallesEliminados: eliminado.detallesEliminados,
+      };
+    } catch (error) {
+      if (['CHANCHITO_NO_EXISTE', 'CHANCHITO_CON_IMAGENES'].includes(error.message)) {
+        return { success: false, reason: error.message };
+      }
+
+      throw error;
+    }
   }
 
   async obtenerDetalle(idMonitoreo) {

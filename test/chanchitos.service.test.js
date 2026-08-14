@@ -83,6 +83,40 @@ function crearServicio({
   };
 }
 
+test('eliminarMonitoreo valida ID y rol antes de llamar al repository', async () => {
+  const llamadas = [];
+  const servicio = new ChanchitosService({
+    eliminarMonitoreoTransaccional: async (idMonitoreo) => {
+      llamadas.push(idMonitoreo);
+      return { idMonitoreo, detallesEliminados: 12 };
+    },
+  }, {}, {});
+
+  assert.deepEqual(await servicio.eliminarMonitoreo('invalido', { rol: 'admin' }), { success: false, reason: 'ID_INVALIDO' });
+  assert.deepEqual(await servicio.eliminarMonitoreo('440', { rol: 'usuario' }), { success: false, reason: 'NO_AUTORIZADO' });
+  assert.deepEqual(await servicio.eliminarMonitoreo('440', { rol: 'admin' }), {
+    success: true,
+    idMonitoreo: 440,
+    detallesEliminados: 12,
+  });
+  assert.deepEqual(llamadas, [440]);
+});
+
+test('eliminarMonitoreo traduce ausencia y propaga fallas inesperadas', async () => {
+  const servicio = new ChanchitosService({
+    eliminarMonitoreoTransaccional: async () => { throw new Error('CHANCHITO_NO_EXISTE'); },
+  }, {}, {});
+  const inesperado = new ChanchitosService({
+    eliminarMonitoreoTransaccional: async () => { throw new Error('FALLA_SQL'); },
+  }, {}, {});
+
+  assert.deepEqual(await servicio.eliminarMonitoreo('440', { rol: 'admin' }), {
+    success: false,
+    reason: 'CHANCHITO_NO_EXISTE',
+  });
+  await assert.rejects(inesperado.eliminarMonitoreo('440', { rol: 'admin' }), /FALLA_SQL/);
+});
+
 test('construye un payload valido con las 12 combinaciones canonicas y snapshot agroclimatico', async () => {
   const { servicio, repository, llamadasAgroclima } = crearServicio();
   let payloadRecibido;
