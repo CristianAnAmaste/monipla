@@ -167,11 +167,22 @@ test('apply usa guardia atomica por ID, fecha y ambas metricas pendientes; cero 
 });
 
 test('el SQL selecciona solo cabeceras pendientes y el UPDATE toca exclusivamente ocho campos agroclimaticos', () => {
-  const contenido = fs.readFileSync(path.join(__dirname, '..', 'src', 'repositories', 'agroclima.repository.js'), 'utf8');
-  const inicioLista = contenido.indexOf('async listarMonitoreosChanchitosPendientesBackfill');
-  const inicioUpdate = contenido.indexOf('async actualizarSnapshotChanchitosPendiente', inicioLista);
-  const consultaLista = contenido.slice(inicioLista, inicioUpdate);
-  const consultaUpdate = contenido.slice(inicioUpdate, contenido.indexOf('async createRequest', inicioUpdate));
+  const contenido = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'repositories', 'agroclima.repository.js'),
+    'utf8',
+  ).replace(/\r\n?/g, '\n');
+  const coincidenciaLista = contenido.match(
+    /async\s+listarMonitoreosChanchitosPendientesBackfill\b([\s\S]*?)\n\s*async\s+listarMonitoreosChanchitosPendientesReconciliacion\b/,
+  );
+  const coincidenciaUpdate = contenido.match(
+    /async\s+actualizarSnapshotChanchitosPendiente\b([\s\S]*?)\n\s*async\s+createRequest\b/,
+  );
+
+  assert.ok(coincidenciaLista, 'No se pudo localizar listarMonitoreosChanchitosPendientesBackfill');
+  assert.ok(coincidenciaUpdate, 'No se pudo localizar actualizarSnapshotChanchitosPendiente');
+
+  const consultaLista = coincidenciaLista[0];
+  const consultaUpdate = coincidenciaUpdate[0];
 
   assert.match(consultaLista, /FROM dbo\.MONI_CABECERAMONITOREO cab/);
   assert.match(consultaLista, /cab\.horas_frio_acumuladas IS NULL/);

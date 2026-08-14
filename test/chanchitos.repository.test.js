@@ -372,13 +372,19 @@ test('la trazabilidad historica se resuelve en un resultset set-based y el detal
   const contenido = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'repositories', 'chanchitos.repository.js'),
     'utf8',
+  ).replace(/\r\n?/g, '\n');
+  const coincidenciaPdf = contenido.match(
+    /CREATE TABLE #TrazabilidadCoincidencias([\s\S]*?)FROM #CabecerasPdf cp\s+LEFT JOIN #CatalogosPdf/,
   );
-  const inicioPdf = contenido.indexOf('CREATE TABLE #TrazabilidadCoincidencias');
-  const finPdf = contenido.indexOf('FROM #CabecerasPdf cp\n        LEFT JOIN #CatalogosPdf', inicioPdf);
-  const bloquePdf = contenido.slice(inicioPdf, finPdf);
-  const inicioDetalle = contenido.indexOf('OUTER APPLY (\n          SELECT CONVERT(nvarchar(100), gcuHistorico.CODIGO)');
-  const finDetalle = contenido.indexOf('${this.obtenerJoinsPresentacionHistorialChanchitos()}', inicioDetalle);
-  const bloqueDetalle = contenido.slice(inicioDetalle, finDetalle);
+  const coincidenciaDetalle = contenido.match(
+    /async obtenerDetalleChanchitos\(idMonitoreo\)\s*\{([\s\S]*?)\n\s*crearRequestHistorial\(pool,\s*filtros\)\s*\{/
+  );
+
+  assert.ok(coincidenciaPdf, 'No se pudo localizar el bloque de trazabilidad del PDF');
+  assert.ok(coincidenciaDetalle, 'No se pudo localizar el metodo obtenerDetalleChanchitos');
+
+  const bloquePdf = coincidenciaPdf[0];
+  const bloqueDetalle = coincidenciaDetalle[1];
 
   assert.match(contenido, /LEFT JOIN dbo\.GEN_CUARTEL gcuHistorico/);
   assert.match(contenido, /CREATE TABLE #CabecerasTrazabilidadHistorica/);
