@@ -5,6 +5,7 @@ const AgroclimaMoniplaService = require('./agroclimaMonipla.service');
 const MAX_INT = 2147483647;
 const ESTADOS = [1, 2, 3];
 const POSICIONES = [1, 2, 3, 4];
+const HISTORIAL_PAGE_SIZES = [10, 25, 50];
 const MATRIZ_CANONICA = Object.freeze(
   ESTADOS.flatMap((idEstadoMonitoreo) => POSICIONES.map((idEstadoPosicion) => Object.freeze({
     idEstadoMonitoreo,
@@ -106,6 +107,95 @@ class ChanchitosService {
         resumenCatalogo: validacion.resumenCatalogo,
       };
     }
+  }
+
+  async obtenerHistorial(query = {}) {
+    const values = this.normalizarFiltrosHistorial(query);
+    const errors = this.validarFiltrosHistorial(values);
+
+    if (errors.length > 0) {
+      return this.crearResultadoHistorialInvalido(values, errors);
+    }
+
+    const [consulta, opciones] = await Promise.all([
+      this.chanchitosRepository.obtenerHistorialConsolidado(values, values.pagina, values.pageSize),
+      this.obtenerOpcionesHistorial(),
+    ]);
+    const resumen = consulta.resumen;
+    const totalRegistros = Number(consulta.totalRegistros || 0);
+    const totalPaginas = Math.max(1, Math.ceil(totalRegistros / values.pageSize));
+    const pagina = Math.min(values.pagina, totalPaginas);
+    const filtros = { ...values, pagina };
+    const detallesPorMonitoreo = new Map();
+    (consulta.detalles || []).forEach((detalle) => {
+      const actual = detallesPorMonitoreo.get(detalle.id_monitoreo) || { total_bichos: 0, posiciones_con_deteccion: 0 };
+      actual.total_bichos += Number(detalle.cantidad_bichos || 0);
+      actual.posiciones_con_deteccion += Number(detalle.cantidad_bichos || 0) > 0 ? 1 : 0;
+      detallesPorMonitoreo.set(detalle.id_monitoreo, actual);
+    });
+    const registros = (consulta.cabeceras || []).map((registro) => ({
+      ...registro,
+      ...(detallesPorMonitoreo.get(registro.id_monitoreo) || {}),
+    }));
+
+    return {
+      success: true,
+      errors: [],
+      values: filtros,
+      opciones,
+      registros: registros.map((registro) => this.prepararRegistroHistorial(registro, opciones)),
+      resumen: {
+        totalMonitoreos: totalRegistros,
+        totalPlantas: Number(resumen.total_plantas || 0),
+        totalBichos: Number(resumen.total_bichos || 0),
+        monitoreosConDeteccion: Number(resumen.monitoreos_con_deteccion || 0),
+      },
+      paginacion: {
+        totalRegistros,
+        pagina,
+        pageSize: filtros.pageSize,
+        totalPaginas,
+      },
+    };
+  }
+
+  async obtenerDetalle(idMonitoreo) {
+    const id = this.normalizarId(idMonitoreo);
+
+    if (!id) {
+      throw new Error('CHANCHITO_NO_EXISTE');
+    }
+
+    const [resultado, opciones] = await Promise.all([
+      this.chanchitosRepository.obtenerDetalleChanchitos(id),
+      this.obtenerOpcionesHistorial(),
+    ]);
+
+    if (!resultado || !resultado.cabecera) {
+      throw new Error('CHANCHITO_NO_EXISTE');
+    }
+
+    const cabecera = resultado.cabecera;
+    const cantidades = new Map((resultado.detalles || []).map((detalle) => [
+      `${detalle.id_estadomonitoreo}-${detalle.id_estadoposicion}`,
+      Number(detalle.cantidad_bichos || 0),
+    ]));
+
+    return {
+      ...this.prepararRegistroHistorial(cabecera, opciones),
+      fechaRegistro: this.formatearFecha(cabecera.fecha_registro),
+      csg: this.textoSeguro(cabecera.csg),
+      trazabilidad: this.textoSeguro(cabecera.trazabilidad),
+      observaciones: this.textoSeguro(cabecera.observaciones),
+      matriz: ESTADOS.map((idEstadoMonitoreo) => ({
+        idEstadoMonitoreo,
+        nombre: ({ 1: 'Ovisaco', 2: 'Ninfa', 3: 'Adulto' })[idEstadoMonitoreo],
+        posiciones: POSICIONES.map((idEstadoPosicion) => ({
+          idEstadoPosicion,
+          cantidad: cantidades.get(`${idEstadoMonitoreo}-${idEstadoPosicion}`) || 0,
+        })),
+      })),
+    };
   }
 
   async validarRegistro(data, usuarioSesion) {
@@ -304,6 +394,97 @@ class ChanchitosService {
     return values;
   }
 
+  normalizarFiltrosHistorial(query = {}) {
+    return {
+      fechaDesde: String(query.fechaDesde || '').trim() || null,
+      fechaHasta: String(query.fechaHasta || '').trim() || null,
+      genFundo: this.normalizarId(query.genFundo) || null,
+      genCampo: this.normalizarId(query.genCampo) || null,
+      genVariedad: this.normalizarId(query.genVariedad) || null,
+      idCatalogoSdp: this.normalizarId(query.idCatalogoSdp) || null,
+      idMonitoreador: this.normalizarId(query.idMonitoreador) || null,
+      idEstadoFenologico: this.normalizarId(query.idEstadoFenologico) || null,
+      deteccion: ['CON_DETECCION', 'SIN_DETECCION'].includes(String(query.deteccion || '').trim())
+        ? String(query.deteccion).trim()
+        : '',
+      pagina: this.normalizarPagina(query.pagina),
+      pageSize: this.normalizarPageSize(query.pageSize),
+    };
+  }
+
+  validarFiltrosHistorial(filtros) {
+    const errors = [];
+
+    if (filtros.fechaDesde && !this.esFechaValida(filtros.fechaDesde)) {
+      errors.push('La fecha desde no tiene un formato valido.');
+    }
+
+    if (filtros.fechaHasta && !this.esFechaValida(filtros.fechaHasta)) {
+      errors.push('La fecha hasta no tiene un formato valido.');
+    }
+
+    if (this.esFechaValida(filtros.fechaDesde) && this.esFechaValida(filtros.fechaHasta)
+      && filtros.fechaDesde > filtros.fechaHasta) {
+      errors.push('La fecha desde no puede ser posterior a la fecha hasta.');
+    }
+
+    return errors;
+  }
+
+  crearResultadoHistorialInvalido(values, errors) {
+    return {
+      success: false,
+      errors,
+      values,
+      opciones: { fundos: [], monitoreadores: [], estadosFenologicos: [] },
+      registros: [],
+      resumen: {
+        totalMonitoreos: 0,
+        totalPlantas: 0,
+        totalBichos: 0,
+        monitoreosConDeteccion: 0,
+      },
+      paginacion: {
+        totalRegistros: 0,
+        pagina: values.pagina,
+        pageSize: values.pageSize,
+        totalPaginas: 1,
+      },
+    };
+  }
+
+  prepararRegistroHistorial(registro, opciones = {}) {
+    const totalBichos = Number(registro.total_bichos || 0);
+    const horasFrio = this.formatearDecimal(registro.horas_frio_acumuladas);
+    const diasGrado = this.formatearDecimal(registro.dias_grado_acumulados);
+
+    return {
+      idMonitoreo: registro.id_monitoreo,
+      fechaMonitoreo: this.formatearFecha(registro.fecha_monitoreo),
+      fundo: this.textoSeguro(registro.nombre_fundo),
+      campo: this.textoSeguro(registro.nombre_campo),
+      variedad: this.textoSeguro(registro.nombre_variedad),
+      cuartel: this.textoSeguro(registro.codigo_cuartel),
+      sdp: this.textoSeguro(registro.sdp),
+      csg: this.textoSeguro(registro.csg),
+      trazabilidad: this.textoSeguro(registro.trazabilidad),
+      cantPlantas: Number(registro.cant_plantas || 0),
+      estadoFenologico: this.textoSeguro(registro.nombre_estado_fenologico || (opciones.estadosFenologicos || []).find((item) => Number(item.value) === Number(registro.id_estadofenologico))?.label),
+      monitoreador: this.textoSeguro(registro.nombre_monitoreador || (opciones.monitoreadores || []).find((item) => Number(item.id_monitoreador) === Number(registro.id_monitoreador))?.nombre_monitoreador),
+      totalBichos,
+      posicionesConDeteccion: Number(registro.posiciones_con_deteccion || 0),
+      tieneDeteccion: totalBichos > 0,
+      agroclima: {
+        horasFrio,
+        diasGrado,
+        estacion: this.textoSeguro(registro.nombre_estacion_meteo),
+        fechaCorte: this.formatearFecha(registro.fecha_corte_agroclima),
+        observacion: this.textoSeguro(registro.agroclima_observacion),
+        tieneDatos: horasFrio !== null || diasGrado !== null,
+      },
+    };
+  }
+
   normalizarId(value) {
     const raw = String(value ?? '').trim();
 
@@ -339,6 +520,47 @@ class ChanchitosService {
 
     const parsed = Number.parseInt(raw, 10);
     return Number.isSafeInteger(parsed) && parsed >= 0 && parsed <= MAX_INT ? parsed : null;
+  }
+
+  normalizarTextoFiltro(value) {
+    return String(value || '').trim().slice(0, 100);
+  }
+
+  async obtenerOpcionesHistorial() {
+    const [fundos, monitoreadores, estadosFenologicos] = await Promise.all([
+      this.catalogoSdpService.listarFondosDisponibles(),
+      this.chanchitosRepository.listarMonitoreadoresActivos(),
+      this.chanchitosRepository.listarEstadosFenologicosActivos(),
+    ]);
+    return { fundos, monitoreadores, estadosFenologicos };
+  }
+
+  normalizarPagina(value) {
+    const pagina = Number.parseInt(value, 10);
+    return Number.isSafeInteger(pagina) && pagina > 0 ? pagina : 1;
+  }
+
+  normalizarPageSize(value) {
+    const pageSize = Number.parseInt(value, 10);
+    return HISTORIAL_PAGE_SIZES.includes(pageSize) ? pageSize : 10;
+  }
+
+  textoSeguro(value) {
+    return String(value || '').trim() || '-';
+  }
+
+  formatearFecha(value) {
+    const texto = String(value || '').trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(texto) ? texto : '-';
+  }
+
+  formatearDecimal(value) {
+    if (value === null || value === undefined || value === '') {
+      return null;
+    }
+
+    const numero = Number(value);
+    return Number.isFinite(numero) ? numero.toFixed(2) : null;
   }
 
   obtenerIdUsuario(usuarioSesion) {

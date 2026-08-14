@@ -311,7 +311,7 @@ test('revalida el monitoreador por ID exclusivamente en MONI_MONITOREADORES', as
   assert.deepEqual(consulta.inputs, [{ nombre: 'idMonitoreador', tipo: 'INT', valor: 1 }]);
 });
 
-test('consulta el PDF general de Chanchitos con LEFT JOIN compatibles y filtros de fecha', async () => {
+test('consulta el PDF general de Chanchitos con cabeceras y detalles separados y filtros de fecha', async () => {
   const filasReporte = [{ id_monitoreo: 438 }];
   const { repository, state } = crearRepository({ filasReporte });
 
@@ -320,22 +320,40 @@ test('consulta el PDF general de Chanchitos con LEFT JOIN compatibles y filtros 
     fechaHasta: '2026-08-05',
   });
 
-  assert.deepEqual(filas, filasReporte);
+  assert.deepEqual(filas.cabeceras, filasReporte);
+  assert.deepEqual(filas.detalles, []);
+  assert.deepEqual(filas.catalogos, []);
+  assert.deepEqual(filas.fundos, []);
+  assert.deepEqual(filas.campos, []);
+  assert.deepEqual(filas.variedades, []);
+  assert.deepEqual(filas.cuarteles, []);
+  assert.deepEqual(filas.monitoreadores, []);
+  assert.deepEqual(filas.estadosFenologicos, []);
   const consulta = state.consultas.at(-1);
+  assert.match(consulta.texto, /CREATE TABLE #ChanchitosFiltrados \(id_monitoreo INT NOT NULL PRIMARY KEY\)/);
+  assert.match(consulta.texto, /INSERT INTO #ChanchitosFiltrados \(id_monitoreo\)/);
   assert.match(consulta.texto, /FROM dbo\.MONI_CABECERAMONITOREO cab/);
-  assert.match(consulta.texto, /LEFT JOIN dbo\.MONI_DETALLEMONITOREO det/);
-  assert.match(consulta.texto, /LEFT JOIN dbo\.MONIPLA_CATALOGO_SDP_MB mb/);
-  assert.match(consulta.texto, /LEFT JOIN dbo\.GEN_CUARTEL gc/);
+  assert.match(consulta.texto, /FROM dbo\.MONI_DETALLEMONITOREO det/);
+  assert.match(consulta.texto, /INNER JOIN #ChanchitosFiltrados seleccion ON seleccion\.id_monitoreo = det\.id_monitoreo/);
   assert.match(consulta.texto, /CONVERT\(nvarchar\(100\), cab\.codigo_cuartel\)/);
   assert.match(consulta.texto, /CONVERT\(nvarchar\(100\), cab\.sdp\)/);
   assert.match(consulta.texto, /CONVERT\(nvarchar\(100\), cab\.CSG\)/);
-  assert.match(consulta.texto, /ORDER BY\s+cab\.fecha_monitoreo DESC,\s+cab\.id_monitoreo DESC/i);
-  assert.doesNotMatch(consulta.texto, /INNER JOIN/i);
-  assert.doesNotMatch(consulta.texto, /mb\.activo/i);
+  assert.match(consulta.texto, /ORDER BY\s+cp\.fecha_monitoreo DESC,\s+cp\.id_monitoreo DESC/i);
+  assert.doesNotMatch(consulta.texto, /LEFT JOIN dbo\.MONIPLA_CATALOGO_SDP_MB mb ON mb\.id_catalogo_sdp = cp\.id_catalogo_sdp/i);
+  assert.doesNotMatch(consulta.texto, /IN \(\$\{placeholders\.join/);
   assert.doesNotMatch(consulta.texto, /dbo\.MONIPLA_MUESTREO|dbo\.MONIPLA_RESULTADO_|dbo\.MONIPLA_MUESTREADOR/i);
-  assert.deepEqual(consulta.inputs, [
+  assert.deepEqual(consulta.inputs.slice(0, 2), [
     { nombre: 'fechaDesde', tipo: 'DATE', valor: '2026-08-01' },
     { nombre: 'fechaHasta', tipo: 'DATE', valor: '2026-08-05' },
+  ]);
+  assert.deepEqual(consulta.inputs.slice(2), [
+    { nombre: 'genFundo', tipo: 'INT', valor: null },
+    { nombre: 'genCampo', tipo: 'INT', valor: null },
+    { nombre: 'genVariedad', tipo: 'INT', valor: null },
+    { nombre: 'idCatalogoSdp', tipo: 'INT', valor: null },
+    { nombre: 'idMonitoreador', tipo: 'INT', valor: null },
+    { nombre: 'idEstadoFenologico', tipo: 'INT', valor: null },
+    { nombre: 'deteccion', tipo: 'VARCHAR(20)', valor: null },
   ]);
 });
 

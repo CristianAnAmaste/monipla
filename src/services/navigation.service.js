@@ -21,7 +21,14 @@ class NavigationService {
         label: 'Monitoreo Chanchito Blanco',
         href: '/chanchitos/nuevo',
         icon: 'CH',
-        match: ['/chanchitos'],
+        match: ['/chanchitos/nuevo', '/chanchitos/pdf/general'],
+      },
+      {
+        label: 'Historial Chanchito Blanco',
+        href: '/chanchitos/historial',
+        icon: 'HC',
+        match: ['/chanchitos/historial'],
+        matchDetail: /^\/chanchitos\/\d+(?:\/|$)/,
       },
       {
         label: 'Historial de Monitoreo',
@@ -56,7 +63,8 @@ class NavigationService {
 
     return items.map((item) => ({
       ...item,
-      active: item.match.some((path) => currentPath === path || currentPath.startsWith(`${path}/`)),
+      active: item.match.some((path) => currentPath === path || currentPath.startsWith(`${path}/`))
+        || Boolean(item.matchDetail && item.matchDetail.test(currentPath)),
     }));
   }
 }

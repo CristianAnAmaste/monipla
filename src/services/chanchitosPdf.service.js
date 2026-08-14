@@ -32,6 +32,9 @@ class ChanchitosPdfService {
 
   async generarReporteGeneral(query = {}) {
     const filtros = this.normalizarFiltros(query);
+    const filtrosPdf = { ...filtros };
+    delete filtrosPdf.pagina;
+    delete filtrosPdf.pageSize;
     const errors = this.validarFiltros(filtros);
 
     if (errors.length > 0) {
@@ -40,22 +43,31 @@ class ChanchitosPdfService {
       throw error;
     }
 
-    const filas = await this.chanchitosRepository.obtenerMonitoreosPdfGeneral(filtros);
-    const monitoreos = this.agruparMonitoreos(filas);
+    const inicioConsulta = performance.now();
+    const [datos, catalogosPresentacion] = await Promise.all([
+      this.chanchitosRepository.obtenerMonitoreosPdfGeneral(filtrosPdf),
+      this.obtenerCatalogosPresentacionPdf(),
+    ]);
+    const tiempoConsultaMs = Math.round(performance.now() - inicioConsulta);
+    const inicioAgrupacion = performance.now();
+    const monitoreos = this.agruparMonitoreos(datos, catalogosPresentacion);
+    const tiempoAgrupacionMs = Math.round(performance.now() - inicioAgrupacion);
     const generatedAt = new Date();
+    const inicioRender = performance.now();
+    const buffer = await this.generarPdf({ filtros: filtrosPdf, monitoreos }, generatedAt);
+    const tiempoRenderMs = Math.round(performance.now() - inicioRender);
 
     return {
       filename: `monipla-chanchitos-reporte-general-${this.fechaArchivo(generatedAt)}.pdf`,
-      buffer: await this.generarPdf({ filtros, monitoreos }, generatedAt),
+      buffer,
       totalMonitoreos: monitoreos.length,
-      filtros,
-    };
-  }
-
-  normalizarFiltros(query = {}) {
-    return {
-      fechaDesde: this.normalizarFecha(query.fechaDesde),
-      fechaHasta: this.normalizarFecha(query.fechaHasta),
+      filtros: filtrosPdf,
+      metricas: {
+        consultaMs: tiempoConsultaMs,
+        agrupacionMs: tiempoAgrupacionMs,
+        renderMs: tiempoRenderMs,
+        totalMs: tiempoConsultaMs + tiempoAgrupacionMs + tiempoRenderMs,
+      },
     };
   }
 
@@ -81,12 +93,41 @@ class ChanchitosPdfService {
     return errors;
   }
 
-  agruparMonitoreos(filas = []) {
+  async obtenerCatalogosPresentacionPdf() {
+    if (typeof this.chanchitosRepository.obtenerCatalogosPresentacionPdf !== 'function') {
+      return { monitoreadores: [], estadosFenologicos: [] };
+    }
+
+    return this.chanchitosRepository.obtenerCatalogosPresentacionPdf();
+  }
+
+  normalizarFiltros(query = {}) {
+    return new ChanchitosService().normalizarFiltrosHistorial(query);
+  }
+
+  agruparMonitoreos(datos = {}, catalogosPresentacion = {}) {
     const monitoreos = new Map();
     const matrizCanonica = ChanchitosService.MATRIZ_CANONICA || [];
     const combinacionesValidas = new Set(matrizCanonica.map((item) => this.claveDetalle(item)));
+    const cabeceras = Array.isArray(datos) ? datos : (datos.cabeceras || []);
+    // Conserva compatibilidad con consumidores internos que entregaban la
+    // antigua fila plana (cabecera y detalle en el mismo resultset).
+    const detalles = Array.isArray(datos) ? datos : (datos.detalles || []);
+    const nombresMonitoreadores = new Map([...(catalogosPresentacion.monitoreadores || []), ...(datos.monitoreadores || [])].map((item) => [
+      Number(item.id_monitoreador),
+      item.nombre_monitoreador,
+    ]));
+    const nombresEstadosFenologicos = new Map([...(catalogosPresentacion.estadosFenologicos || []), ...(datos.estadosFenologicos || [])].map((item) => [
+      Number(item.id_estadofenologico),
+      item.nom_estadofenologico,
+    ]));
+    const catalogosPorId = new Map((datos.catalogos || []).map((item) => [Number(item.id_catalogo_sdp), item]));
+    const fundosPorId = new Map((datos.fundos || []).map((item) => [Number(item.id), item.nombre]));
+    const camposPorId = new Map((datos.campos || []).map((item) => [Number(item.id), item.nombre]));
+    const variedadesPorId = new Map((datos.variedades || []).map((item) => [Number(item.id), item.nombre]));
+    const cuartelesPorId = new Map((datos.cuarteles || []).map((item) => [Number(item.id), item]));
 
-    for (const fila of Array.isArray(filas) ? filas : []) {
+    for (const fila of cabeceras) {
       const idMonitoreo = Number(fila.id_monitoreo);
 
       if (!Number.isSafeInteger(idMonitoreo) || idMonitoreo <= 0) {
@@ -97,17 +138,27 @@ class ChanchitosPdfService {
         monitoreos.set(idMonitoreo, {
           idMonitoreo,
           fechaMonitoreo: fila.fecha_monitoreo,
-          fundo: fila.nombre_fundo,
-          campo: fila.nombre_campo,
-          variedad: fila.nombre_variedad,
-          cuartel: fila.codigo_cuartel,
+          fundo: fila.nombre_fundo || catalogosPorId.get(Number(fila.id_catalogo_sdp))?.fundo || fundosPorId.get(Number(fila.gen_fundo)) || fundosPorId.get(Number(cuartelesPorId.get(Number(fila.gen_cuartel))?.GEN_FUNDO)) || '-',
+          campo: fila.nombre_campo || catalogosPorId.get(Number(fila.id_catalogo_sdp))?.nombre_productor || camposPorId.get(Number(fila.gen_campo)) || camposPorId.get(Number(cuartelesPorId.get(Number(fila.gen_cuartel))?.GEN_CAMPO)) || '-',
+          variedad: fila.nombre_variedad || catalogosPorId.get(Number(fila.id_catalogo_sdp))?.variedad || variedadesPorId.get(Number(fila.gen_variedad)) || variedadesPorId.get(Number(cuartelesPorId.get(Number(fila.gen_cuartel))?.GEN_VARIEDAD)) || '-',
+          cuartel: fila.codigo_cuartel || cuartelesPorId.get(Number(fila.gen_cuartel))?.codigo_cuartel || catalogosPorId.get(Number(fila.id_catalogo_sdp))?.cuartel || '-',
           sdp: fila.sdp,
           csg: fila.csg,
-          trazabilidad: fila.trazabilidad,
-          estadoFenologico: fila.nombre_estado_fenologico,
+          trazabilidad: fila.trazabilidad
+            || catalogosPorId.get(Number(fila.id_catalogo_sdp))?.codigo_trazabilidad
+            || '',
+          estadoFenologico: fila.nombre_estado_fenologico
+            || nombresEstadosFenologicos.get(Number(fila.id_estadofenologico))
+            || '',
           cantPlantas: fila.cant_plantas,
-          monitoreador: fila.nombre_monitoreador,
+          monitoreador: fila.nombre_monitoreador
+            || nombresMonitoreadores.get(Number(fila.id_monitoreador))
+            || '',
           observaciones: this.normalizarObservaciones(fila.observaciones),
+          horasFrio: this.normalizarDecimal(fila.horas_frio_acumuladas),
+          diasGrado: this.normalizarDecimal(fila.dias_grado_acumulados),
+          estacionMeteo: fila.nombre_estacion_meteo,
+          fechaCorteAgroclima: fila.fecha_corte_agroclima,
           detallePorClave: new Map(),
           detallesDuplicados: 0,
           detallesFueraRango: 0,
@@ -115,7 +166,12 @@ class ChanchitosPdfService {
         });
       }
 
+    }
+
+    for (const fila of detalles) {
+      const idMonitoreo = Number(fila.id_monitoreo);
       const monitoreo = monitoreos.get(idMonitoreo);
+      if (!monitoreo) continue;
       const idEstadoMonitoreo = this.normalizarIdDetalle(fila.id_estadomonitoreo);
       const idEstadoPosicion = this.normalizarIdDetalle(fila.id_estadoposicion);
 
@@ -242,7 +298,7 @@ class ChanchitosPdfService {
 
     const titleX = this.logoPath ? x + logoWidth + 18 : x + 12;
     doc.font('Helvetica-Bold').fontSize(compacto ? 11 : 15).fillColor(COLORS.primary)
-      .text('Reporte general - Monitoreo de Chanchitos Blancos', titleX, y + 9, {
+      .text('Reporte Monitoreo Pseudococcus sp.', titleX, y + 9, {
         width: x + width - titleX - 12,
       });
     doc.font('Helvetica').fontSize(compacto ? 8.5 : 10).fillColor(COLORS.text)
@@ -289,9 +345,9 @@ class ChanchitosPdfService {
     const width = this.anchoUtil(doc);
     const y = doc.y;
 
-    doc.save().roundedRect(x, y, width, 22, 3).fill(COLORS.soft).restore();
-    doc.font('Helvetica-Bold').fontSize(10).fillColor(COLORS.primary)
-      .text(`Monitoreo #${monitoreo.idMonitoreo} - Fecha: ${this.formatearFecha(monitoreo.fechaMonitoreo)}`, x + 8, y + 6, {
+    doc.save().roundedRect(x, y, width, 22, 3).fill(COLORS.primary).restore();
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(COLORS.white)
+      .text(`Monitoreo #${monitoreo.idMonitoreo} - Fecha: ${this.formatearFechaCorta(monitoreo.fechaMonitoreo)}`, x + 8, y + 6, {
         width: width - 16,
       });
     doc.y = y + 28;
@@ -344,7 +400,8 @@ class ChanchitosPdfService {
       [['SDP', monitoreo.sdp], ['CSG', monitoreo.csg]],
       [['Trazabilidad', monitoreo.trazabilidad], ['Estado fenologico', monitoreo.estadoFenologico]],
       [['Plantas revisadas', monitoreo.cantPlantas], ['Monitoreador', monitoreo.monitoreador]],
-      [['Total de individuos', monitoreo.totalIndividuos], ['', '']],
+      [['Total de individuos', monitoreo.totalIndividuos], ['Estacion / corte', this.descripcionEstacionCorte(monitoreo)]],
+      [['Agroclima', this.descripcionAgroclima(monitoreo)], ['', '']],
     ];
   }
 
@@ -440,6 +497,32 @@ class ChanchitosPdfService {
     return fecha || null;
   }
 
+  normalizarDecimal(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const numero = Number(value);
+    return Number.isFinite(numero) ? numero : null;
+  }
+
+  descripcionAgroclima(monitoreo) {
+    const valores = [];
+    if (monitoreo.horasFrio !== null) valores.push(`HF: ${monitoreo.horasFrio.toFixed(2).replace('.', ',')} h`);
+    if (monitoreo.diasGrado !== null) valores.push(`DG: ${monitoreo.diasGrado.toFixed(2).replace('.', ',')}`);
+    return valores.length ? valores.join(' · ') : 'Sin datos agroclimaticos';
+  }
+
+  descripcionEstacionCorte(monitoreo) {
+    const estacion = this.valor(monitoreo.estacionMeteo, '-');
+    const corte = monitoreo.fechaCorteAgroclima ? this.formatearFecha(monitoreo.fechaCorteAgroclima) : '-';
+    return estacion === '-' && corte === '-' ? '-' : `${estacion} · Corte: ${corte}`;
+  }
+
+  normalizarId(value) {
+    const texto = String(value || '').trim();
+    if (!/^\d+$/.test(texto)) return null;
+    const id = Number.parseInt(texto, 10);
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  }
+
   esFechaValida(value) {
     if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
 
@@ -466,6 +549,13 @@ class ChanchitosPdfService {
       timeZone: 'UTC',
       dateStyle: 'short',
     }).format(fecha);
+  }
+
+  formatearFechaCorta(value) {
+    if (!value) return '-';
+    const fecha = value instanceof Date ? value : new Date(`${String(value).slice(0, 10)}T00:00:00Z`);
+    if (Number.isNaN(fecha.getTime())) return this.valor(value, '-');
+    return `${String(fecha.getUTCDate()).padStart(2, '0')}-${String(fecha.getUTCMonth() + 1).padStart(2, '0')}-${String(fecha.getUTCFullYear()).slice(-2)}`;
   }
 
   formatearFechaHora(value) {

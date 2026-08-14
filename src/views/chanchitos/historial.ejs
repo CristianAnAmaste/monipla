@@ -1,0 +1,80 @@
+<%
+  const parametros = new URLSearchParams();
+  ['fechaDesde', 'fechaHasta', 'genFundo', 'genCampo', 'genVariedad', 'idCatalogoSdp', 'idMonitoreador', 'idEstadoFenologico', 'deteccion', 'pageSize'].forEach((key) => {
+    if (values[key]) parametros.set(key, values[key]);
+  });
+  const buildPageUrl = (pagina) => {
+    const query = new URLSearchParams(parametros);
+    query.set('pagina', pagina);
+    return `/chanchitos/historial?${query.toString()}`;
+  };
+  const buildPdfUrl = () => {
+    const query = new URLSearchParams();
+    ['fechaDesde', 'fechaHasta', 'genFundo', 'genCampo', 'genVariedad', 'idCatalogoSdp', 'idMonitoreador', 'idEstadoFenologico', 'deteccion'].forEach((key) => {
+      if (values[key]) query.set(key, values[key]);
+    });
+    const serialized = query.toString();
+    return `/chanchitos/pdf/general${serialized ? `?${serialized}` : ''}`;
+  };
+%>
+
+<section class="page-header">
+  <div>
+    <p class="eyebrow">Monitoreos</p>
+    <h1>Historial Chanchito Blanco</h1>
+    <p>Revise los monitoreos registrados, sus detecciones y el resumen agroclimático asociado.</p>
+  </div>
+  <div class="form-actions">
+    <a id="chanchitos-pdf-general" class="button button-secondary" href="<%= buildPdfUrl() %>">Descargar PDF general</a>
+    <a class="button button-primary" href="/chanchitos/nuevo">Registrar monitoreo</a>
+  </div>
+</section>
+
+<% if (errors.length > 0) { %>
+  <div class="alert" role="alert"><strong>Revise los filtros.</strong><ul class="message-list"><% errors.forEach((error) => { %><li><%= error %></li><% }) %></ul></div>
+<% } %>
+
+<section class="chanchitos-summary-grid" aria-label="Resumen del historial">
+  <article class="info-panel chanchitos-summary-card"><span>Monitoreos filtrados</span><strong><%= resumen.totalMonitoreos %></strong></article>
+  <article class="info-panel chanchitos-summary-card"><span>Plantas monitoreadas</span><strong><%= resumen.totalPlantas %></strong></article>
+  <article class="info-panel chanchitos-summary-card"><span>Bichos encontrados</span><strong><%= resumen.totalBichos %></strong></article>
+  <article class="info-panel chanchitos-summary-card"><span>Con detección</span><strong><%= resumen.monitoreosConDeteccion %></strong></article>
+</section>
+
+<section class="form-panel chanchitos-history-filters">
+  <form id="chanchitos-history-form" class="form chanchitos-history-filter-grid" action="/chanchitos/historial" method="GET" autocomplete="off">
+    <div class="form-group"><label for="fechaDesde">Fecha desde</label><input id="fechaDesde" name="fechaDesde" type="date" value="<%= values.fechaDesde %>"></div>
+    <div class="form-group"><label for="fechaHasta">Fecha hasta</label><input id="fechaHasta" name="fechaHasta" type="date" value="<%= values.fechaHasta %>"></div>
+    <div class="form-group"><label for="genFundo">Fundo</label><select id="genFundo" name="genFundo"><option value="">Todos</option><% opciones.fundos.forEach((item) => { %><option value="<%= item.value %>" <%= Number(values.genFundo) === Number(item.value) ? 'selected' : '' %>><%= item.label %></option><% }) %></select></div>
+    <div class="form-group"><label for="genCampo">Productor / Campo</label><select id="genCampo" name="genCampo" data-selected="<%= values.genCampo %>" disabled><option value="">Seleccione primero un fundo</option></select></div>
+    <div class="form-group"><label for="genVariedad">Variedad</label><select id="genVariedad" name="genVariedad" data-selected="<%= values.genVariedad %>" disabled><option value="">Seleccione primero un campo</option></select></div>
+    <div class="form-group"><label for="idCatalogoSdp">Cuartel</label><select id="idCatalogoSdp" name="idCatalogoSdp" data-selected="<%= values.idCatalogoSdp %>" disabled><option value="">Seleccione primero una variedad</option></select></div>
+    <div class="form-group"><label for="idMonitoreador">Monitoreador</label><select id="idMonitoreador" name="idMonitoreador"><option value="">Todos</option><% opciones.monitoreadores.forEach((item) => { %><option value="<%= item.id_monitoreador %>" <%= Number(values.idMonitoreador) === Number(item.id_monitoreador) ? 'selected' : '' %>><%= item.nombre_monitoreador %></option><% }) %></select></div>
+    <div class="form-group"><label for="idEstadoFenologico">Estado fenológico</label><select id="idEstadoFenologico" name="idEstadoFenologico"><option value="">Todos</option><% opciones.estadosFenologicos.forEach((item) => { %><option value="<%= item.value %>" <%= Number(values.idEstadoFenologico) === Number(item.value) ? 'selected' : '' %>><%= item.label %></option><% }) %></select></div>
+    <div class="form-group"><label for="deteccion">Detección</label><select id="deteccion" name="deteccion"><option value="">Todos</option><option value="CON_DETECCION" <%= values.deteccion === 'CON_DETECCION' ? 'selected' : '' %>>Solo con detección</option><option value="SIN_DETECCION" <%= values.deteccion === 'SIN_DETECCION' ? 'selected' : '' %>>Sin detección</option></select></div>
+    <div class="form-group"><label for="pageSize">Resultados por página</label><select id="pageSize" name="pageSize"><% [10, 25, 50].forEach((size) => { %><option value="<%= size %>" <%= values.pageSize === size ? 'selected' : '' %>><%= size %></option><% }) %></select></div>
+    <div class="form-actions chanchitos-filter-actions"><a class="button button-secondary button-fit" href="/chanchitos/historial">Limpiar</a><button class="button button-primary button-fit" type="submit">Filtrar</button></div>
+  </form>
+</section>
+<script src="/js/chanchitos-historial.js"></script>
+
+<section class="data-panel chanchitos-history-panel">
+  <div class="historial-toolbar"><div><strong><%= paginacion.totalRegistros %> monitoreos encontrados</strong><p><%= paginacion.totalRegistros ? `Página ${paginacion.pagina} de ${paginacion.totalPaginas}` : 'Sin registros para los filtros seleccionados.' %></p></div></div>
+  <% if (registros.length === 0) { %>
+    <div class="empty-state"><strong>No hay monitoreos para los filtros seleccionados.</strong><p>Ajuste los filtros o vuelva a ver todos los registros.</p><a class="button button-secondary button-fit" href="/chanchitos/historial">Limpiar filtros</a></div>
+  <% } else { %>
+    <div class="table-wrap chanchitos-history-table-wrap"><table class="data-table chanchitos-history-table"><thead><tr><th>Fecha</th><th>Fundo / Productor</th><th>Variedad / Cuartel</th><th>SDP</th><th>Plantas</th><th>Total bichos</th><th>Monitoreador</th><th>Agroclima</th><th>Acción</th></tr></thead><tbody>
+      <% registros.forEach((registro) => { %><tr>
+        <td data-label="Fecha"><strong><%= registro.fechaMonitoreo %></strong></td>
+        <td data-label="Fundo / Productor"><strong><%= registro.fundo %></strong><span><%= registro.campo %></span></td>
+        <td data-label="Variedad / Cuartel"><strong><%= registro.variedad %></strong><span><%= registro.cuartel %></span></td>
+        <td data-label="SDP"><%= registro.sdp %></td><td data-label="Plantas"><%= registro.cantPlantas %></td>
+        <td data-label="Total bichos"><span class="chanchitos-detection <%= registro.tieneDeteccion ? 'is-positive' : 'is-zero' %>"><%= registro.totalBichos %></span></td>
+        <td data-label="Monitoreador"><%= registro.monitoreador %></td>
+        <td data-label="Agroclima"><% if (registro.agroclima.tieneDatos) { %><strong><%= registro.agroclima.horasFrio !== null ? `HF ${registro.agroclima.horasFrio}` : `DG ${registro.agroclima.diasGrado}` %></strong><span><%= registro.agroclima.estacion %></span><% } else { %><span class="chanchitos-agro-empty">Sin datos</span><% } %></td>
+        <td data-label="Acción"><a class="button button-secondary button-small" href="/chanchitos/<%= registro.idMonitoreo %>">Ver detalle</a></td>
+      </tr><% }) %>
+    </tbody></table></div>
+    <nav class="pagination" aria-label="Paginación historial Chanchito Blanco"><a class="button button-secondary button-fit <%= paginacion.pagina <= 1 ? 'is-disabled' : '' %>" href="<%= paginacion.pagina <= 1 ? '#' : buildPageUrl(paginacion.pagina - 1) %>">Anterior</a><span>Página <%= paginacion.pagina %> de <%= paginacion.totalPaginas %></span><a class="button button-secondary button-fit <%= paginacion.pagina >= paginacion.totalPaginas ? 'is-disabled' : '' %>" href="<%= paginacion.pagina >= paginacion.totalPaginas ? '#' : buildPageUrl(paginacion.pagina + 1) %>">Siguiente</a></nav>
+  <% } %>
+</section>
