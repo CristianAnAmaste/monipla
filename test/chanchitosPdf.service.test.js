@@ -76,7 +76,11 @@ test('genera reporte sin filtros, agrupa una cabecera y devuelve un PDF valido',
 
   const reporte = await servicio.generarReporteGeneral();
 
-  assert.deepEqual(llamadas, [{ fechaDesde: null, fechaHasta: null }]);
+  assert.deepEqual(llamadas, [{
+    fechaDesde: null, fechaHasta: null, genFundo: null, genCampo: null,
+    genVariedad: null, idCatalogoSdp: null, idMonitoreador: null,
+    idEstadoFenologico: null, deteccion: '',
+  }]);
   assert.equal(reporte.totalMonitoreos, 1);
   assert.equal(reporte.buffer.subarray(0, 5).toString(), '%PDF-');
   assert.match(reporte.filename, /^monipla-chanchitos-reporte-general-\d{8}\.pdf$/);
@@ -86,7 +90,11 @@ test('valida filtros de fecha y los entrega al repositorio', async () => {
   const { servicio, llamadas } = crearServicio([]);
 
   await servicio.generarReporteGeneral({ fechaDesde: '2026-08-01', fechaHasta: '2026-08-05' });
-  assert.deepEqual(llamadas, [{ fechaDesde: '2026-08-01', fechaHasta: '2026-08-05' }]);
+  assert.deepEqual(llamadas, [{
+    fechaDesde: '2026-08-01', fechaHasta: '2026-08-05', genFundo: null,
+    genCampo: null, genVariedad: null, idCatalogoSdp: null,
+    idMonitoreador: null, idEstadoFenologico: null, deteccion: '',
+  }]);
 
   await assert.rejects(
     servicio.generarReporteGeneral({ fechaDesde: '2026-99-01' }),
@@ -96,6 +104,48 @@ test('valida filtros de fecha y los entrega al repositorio', async () => {
     servicio.generarReporteGeneral({ fechaDesde: '2026-08-06', fechaHasta: '2026-08-05' }),
     /FILTROS_REPORTE_INVALIDOS/
   );
+});
+
+test('normaliza todos los filtros del historial antes de consultar el PDF', async () => {
+  const { servicio, llamadas } = crearServicio([]);
+
+  await servicio.generarReporteGeneral({
+    genFundo: '9', genCampo: '12', genVariedad: '18', idCatalogoSdp: '44',
+    idMonitoreador: '3', idEstadoFenologico: '7', deteccion: 'CON_DETECCION',
+  });
+
+  assert.deepEqual(llamadas, [{
+    fechaDesde: null, fechaHasta: null, genFundo: 9, genCampo: 12,
+    genVariedad: 18, idCatalogoSdp: 44, idMonitoreador: 3,
+    idEstadoFenologico: 7, deteccion: 'CON_DETECCION',
+  }]);
+});
+
+test('agrupa una cabecera unica y anexa los detalles desde el segundo resultset', () => {
+  const { servicio } = crearServicio();
+  const detalles = filasDetalle(nuevo438, [1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0])
+    .map(({ id_monitoreo, id_estadomonitoreo, id_estadoposicion, cantidad_bichos }) => ({
+      id_monitoreo, id_estadomonitoreo, id_estadoposicion, cantidad_bichos,
+    }));
+  const [monitoreo] = servicio.agruparMonitoreos({
+    cabeceras: [{
+      ...nuevo438,
+      nombre_monitoreador: '',
+      nombre_estado_fenologico: '',
+      id_monitoreador: 3,
+      id_estadofenologico: 7,
+    }],
+    detalles,
+  }, {
+    monitoreadores: [{ id_monitoreador: 3, nombre_monitoreador: 'Jocelyn Pasten' }],
+    estadosFenologicos: [{ id_estadofenologico: 7, nom_estadofenologico: 'Envero' }],
+  });
+
+  assert.equal(monitoreo.idMonitoreo, 438);
+  assert.equal(monitoreo.totalIndividuos, 7);
+  assert.equal(monitoreo.monitoreador, 'Jocelyn Pasten');
+  assert.equal(monitoreo.estadoFenologico, 'Envero');
+  assert.equal(monitoreo.detallesValidos, 12);
 });
 
 test('incluye registros nuevos e historicos sin depender de gen_cuartel o id_catalogo_sdp', () => {

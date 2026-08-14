@@ -10,6 +10,8 @@ class ChanchitosController {
     this.chanchitosPdfService = chanchitosPdfService;
     this.nuevo = this.nuevo.bind(this);
     this.crear = this.crear.bind(this);
+    this.mostrarHistorial = this.mostrarHistorial.bind(this);
+    this.mostrarDetalle = this.mostrarDetalle.bind(this);
     this.descargarPdfGeneral = this.descargarPdfGeneral.bind(this);
   }
 
@@ -97,6 +99,8 @@ class ChanchitosController {
       console.info('[MONIPLA][CHANCHITOS][PDF_GENERAL]', {
         filtros: pdf.filtros,
         totalMonitoreos: pdf.totalMonitoreos,
+        consultaMs: pdf.metricas && pdf.metricas.consultaMs,
+        renderMs: pdf.metricas && pdf.metricas.renderMs,
       });
 
       res.setHeader('Content-Type', 'application/pdf');
@@ -124,6 +128,54 @@ class ChanchitosController {
     }
   }
 
+  async mostrarHistorial(req, res) {
+    try {
+      const resultado = await this.chanchitosService.obtenerHistorial(req.query);
+
+      return this.renderHistorial(res.status(resultado.success ? 200 : 400), resultado);
+    } catch (error) {
+      console.error('[MONIPLA][CHANCHITOS][HISTORIAL][ERROR]', { filtros: req.query, error: error.message });
+      const values = this.chanchitosService.normalizarFiltrosHistorial(req.query);
+      let opciones = { fundos: [], monitoreadores: [], estadosFenologicos: [] };
+      try {
+        opciones = await this.chanchitosService.obtenerOpcionesHistorial();
+      } catch (_) {
+        // Mantiene los filtros recibidos aunque los catálogos livianos no estén disponibles.
+      }
+      const resultado = this.chanchitosService.crearResultadoHistorialInvalido(
+        values,
+        ['No fue posible cargar el historial de Chanchito Blanco.']
+      );
+      resultado.opciones = opciones;
+
+      return this.renderHistorial(res.status(500), resultado);
+    }
+  }
+
+  async mostrarDetalle(req, res) {
+    try {
+      const detalle = await this.chanchitosService.obtenerDetalle(req.params.id);
+
+      return res.render('layouts/main', {
+        title: 'Detalle Monitoreo Chanchito Blanco',
+        contentView: '../chanchitos/detalle',
+        detalle,
+      });
+    } catch (error) {
+      const status = error.message === 'CHANCHITO_NO_EXISTE' ? 404 : 500;
+      console.error('[MONIPLA][CHANCHITOS][DETALLE][ERROR]', { id: req.params.id, error: error.message });
+
+      return res.status(status).render('layouts/main', {
+        title: 'Detalle de Chanchito Blanco',
+        contentView: '../monitoreos/placeholder',
+        pageTitle: status === 404 ? 'Monitoreo no disponible' : 'Detalle no disponible',
+        pageMessage: status === 404
+          ? 'El monitoreo de Chanchito Blanco solicitado no existe.'
+          : 'No fue posible cargar el detalle del monitoreo.',
+      });
+    }
+  }
+
   renderNuevo(res, data) {
     return res.render('layouts/main', {
       title: 'Registrar Monitoreo de Chanchitos',
@@ -133,6 +185,19 @@ class ChanchitosController {
       values: data.values,
       opciones: data.opciones,
       resumenCatalogo: data.resumenCatalogo || null,
+    });
+  }
+
+  renderHistorial(res, data) {
+    return res.render('layouts/main', {
+      title: 'Historial Chanchito Blanco',
+      contentView: '../chanchitos/historial',
+      errors: data.errors || [],
+      values: data.values,
+      opciones: data.opciones || { fundos: [], monitoreadores: [], estadosFenologicos: [] },
+      registros: data.registros || [],
+      resumen: data.resumen,
+      paginacion: data.paginacion,
     });
   }
 }

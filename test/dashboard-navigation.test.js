@@ -14,14 +14,17 @@ test('el dashboard incluye el acceso a Monitoreo Chanchito Blanco', () => {
   });
 });
 
-test('el menu mantiene activo Monitoreo Chanchito Blanco dentro del modulo', () => {
+test('el menu separa el registro y el historial de Chanchito Blanco', () => {
   const menu = new NavigationService().buildMenu({ rol: 'usuario' }, '/chanchitos/nuevo');
 
   assert.deepEqual(menu.find((item) => item.href === '/chanchitos/nuevo'), {
     label: 'Monitoreo Chanchito Blanco',
     href: '/chanchitos/nuevo',
     icon: 'CH',
-    match: ['/chanchitos'],
+    match: ['/chanchitos/nuevo', '/chanchitos/pdf/general'],
     active: true,
   });
+  assert.equal(menu.find((item) => item.href === '/chanchitos/historial').active, false);
+  assert.equal(new NavigationService().buildMenu({ rol: 'usuario' }, '/chanchitos/439')
+    .find((item) => item.href === '/chanchitos/historial').active, true);
 });

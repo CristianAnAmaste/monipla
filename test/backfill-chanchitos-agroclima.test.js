@@ -1,9 +1,10 @@
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   parsearArgumentos,
-  decidirAccion,
-  esMejorParcial,
+  clasificarPropuesta,
   formatearDecimal,
   calcularFechaCorteEsperada,
   ejecutarBackfill,
@@ -13,9 +14,9 @@ const NTC_UUID = '9373a0db-6a2d-48c9-883a-f23e6f26753b';
 
 function crearCandidato(overrides = {}) {
   return {
-    id_monitoreo: 439,
-    gen_fundo: 9,
-    fecha_monitoreo: '2026-08-11',
+    id_monitoreo: 441,
+    gen_fundo: 8,
+    fecha_monitoreo: '2026-08-13',
     horas_frio_actuales: null,
     dias_grado_actuales: null,
     estacion_uuid_actual: null,
@@ -32,10 +33,10 @@ function crearCandidato(overrides = {}) {
 function crearSnapshot(overrides = {}) {
   return {
     horasFrioAcumuladas: null,
-    diasGradoAcumulados: 4.3611,
+    diasGradoAcumulados: 19.1667,
     estacionMeteoUuid: NTC_UUID,
     nombreEstacionMeteo: 'NTC',
-    fechaCorteAgroclima: '2026-08-10',
+    fechaCorteAgroclima: '2026-08-12',
     semanaIsoCorte: 33,
     temporadaAgroclima: '2026',
     agroclimaObservacion: 'Agroclima OK desde Meteo FEAL.',
@@ -43,23 +44,41 @@ function crearSnapshot(overrides = {}) {
   };
 }
 
-function crearDependencias({ candidato = crearCandidato(), snapshot = crearSnapshot() } = {}) {
+function opciones(overrides = {}) {
+  return {
+    apply: false,
+    dryRun: true,
+    confirmarTodos: false,
+    ids: [441],
+    fechaDesde: null,
+    fechaHasta: null,
+    genFundo: null,
+    limit: null,
+    ...overrides,
+  };
+}
+
+function crearDependencias({
+  candidatos = [crearCandidato()],
+  snapshot = crearSnapshot(),
+  filasActualizadas = 1,
+} = {}) {
   const actualizaciones = [];
   const consultas = [];
   const logs = [];
   const repository = {
-    listarMonitoreosChanchitosAgroclima: async (opciones) => {
-      consultas.push(opciones);
-      return [candidato];
+    listarMonitoreosChanchitosPendientesBackfill: async (filtros) => {
+      consultas.push({ tipo: 'candidatos', filtros });
+      return candidatos;
     },
-    actualizarSnapshotChanchitosSiCoincide: async (...args) => {
+    actualizarSnapshotChanchitosPendiente: async (...args) => {
       actualizaciones.push(args);
-      return 1;
+      return filasActualizadas;
     },
   };
   const agroclimaService = {
     calcularSnapshotSeguroPorFundo: async (genFundo, fechaMuestra) => {
-      consultas.push({ genFundo, fechaMuestra });
+      consultas.push({ tipo: 'agroclima', genFundo, fechaMuestra });
       return snapshot;
     },
   };
@@ -67,171 +86,102 @@ function crearDependencias({ candidato = crearCandidato(), snapshot = crearSnaps
     info: (...args) => logs.push(['info', ...args]),
     error: (...args) => logs.push(['error', ...args]),
   };
-
   return { repository, agroclimaService, logger, actualizaciones, consultas, logs };
 }
 
-function opciones(overrides = {}) {
-  return {
-    apply: false,
-    idMonitoreo: 439,
-    fechaDesde: null,
-    fechaHasta: null,
-    genFundo: null,
-    ...overrides,
-  };
-}
-
-test('acepta --id=439 y bloquea combinaciones ambiguas', () => {
-  assert.deepEqual(parsearArgumentos(['--id=439']), opciones());
-  assert.deepEqual(parsearArgumentos(['--from=2026-08-01', '--to=2026-08-31', '--fundo=9']), {
-    apply: false,
-    idMonitoreo: null,
-    fechaDesde: '2026-08-01',
-    fechaHasta: '2026-08-31',
-    genFundo: 9,
-  });
-  assert.throws(() => parsearArgumentos(['--id=439', '--fundo=9']), /no se combina/);
-  assert.throws(() => parsearArgumentos(['--apply']), /requiere --id o un rango/);
+test('usa dry-run por defecto, acepta IDs explicitos y exige confirmacion para apply masivo', () => {
+  assert.deepEqual(parsearArgumentos(['--ids=441,442,441', '--fundo=8', '--limit=2']), opciones({
+    ids: [441, 442], genFundo: 8, limit: 2,
+  }));
+  assert.deepEqual(parsearArgumentos(['--ids', '441', '--apply']), opciones({ apply: true, dryRun: false }));
+  assert.throws(() => parsearArgumentos(['--apply', '--from=2026-08-01', '--to=2026-08-13']), /confirmar-todos/);
+  assert.throws(() => parsearArgumentos(['--apply', '--dry-run', '--ids=441']), /no se pueden combinar/);
 });
 
-test('historico sin id_catalogo_sdp usa gen_fundo y dry-run no escribe', async () => {
+test('historico sin id_catalogo_sdp y con observacion SIN_DATOS calcula por fundo sin escribir en dry-run', async () => {
   const dependencias = crearDependencias();
-
   const resumen = await ejecutarBackfill(opciones(), dependencias);
   const registro = dependencias.logs.find(([, evento]) => evento.endsWith('[REGISTRO]'));
 
   assert.deepEqual(dependencias.actualizaciones, []);
-  assert.deepEqual(dependencias.consultas.at(1), { genFundo: 9, fechaMuestra: '2026-08-11' });
+  assert.deepEqual(dependencias.consultas[1], { tipo: 'agroclima', genFundo: 8, fechaMuestra: '2026-08-13' });
   assert.equal(resumen.actualizables, 1);
-  assert.equal(registro[2].estacion_propuesta, 'NTC');
-  assert.equal(registro[2].dg_actual, 'NULL');
-  assert.equal(registro[2].dg_propuesta, '4.36');
-  assert.equal(registro[2].fecha_corte, '2026-08-10');
-  assert.equal(registro[2].accion, 'ACTUALIZARIA');
+  assert.equal(registro[2].fecha_corte_esperada, '2026-08-12');
+  assert.equal(registro[2].dg_propuesta, '19.17');
+  assert.equal(registro[2].estado, 'ACTUALIZABLE');
 });
 
-test('permite SIN_DATOS a OK y PARCIAL a OK', () => {
-  const propuestoOk = crearSnapshot();
-  const sinDatos = crearSnapshot({
-    diasGradoAcumulados: null,
-    estacionMeteoUuid: null,
-    nombreEstacionMeteo: null,
-    fechaCorteAgroclima: null,
-    semanaIsoCorte: null,
-    temporadaAgroclima: null,
-    agroclimaObservacion: 'Sin datos agroclimaticos para la fecha de corte.',
-  });
-  const parcial = crearSnapshot({
-    horasFrioAcumuladas: 10,
-    diasGradoAcumulados: null,
-    agroclimaObservacion: 'Agroclima parcial: existen dias sin datos en el periodo.',
-  });
-
-  assert.equal(decidirAccion(sinDatos, propuestoOk).accion, 'ACTUALIZARIA');
-  assert.equal(decidirAccion(parcial, propuestoOk).accion, 'ACTUALIZARIA');
+test('registros con HF o DG ya existentes se clasifican YA_COMPLETO y no llaman MeteoFEAL', async () => {
+  for (const candidato of [
+    crearCandidato({ horas_frio_actuales: 1 }),
+    crearCandidato({ dias_grado_actuales: 1 }),
+  ]) {
+    const dependencias = crearDependencias({ candidatos: [candidato] });
+    const resumen = await ejecutarBackfill(opciones(), dependencias);
+    assert.equal(resumen.yaCompletos, 1);
+    assert.equal(dependencias.consultas.length, 1);
+    assert.deepEqual(dependencias.actualizaciones, []);
+  }
 });
 
-test('permite PARCIAL a mejor PARCIAL y bloquea una cobertura inferior', () => {
-  const actual = crearSnapshot({
-    horasFrioAcumuladas: 100,
-    diasGradoAcumulados: null,
-    agroclimaObservacion: 'Agroclima parcial. Cobertura: 50 dias con datos y 10 sin datos.',
-  });
-  const mejor = crearSnapshot({
-    horasFrioAcumuladas: 101,
-    diasGradoAcumulados: null,
-    agroclimaObservacion: 'Agroclima parcial. Cobertura: 60 dias con datos y 5 sin datos.',
-  });
-  const peor = crearSnapshot({
-    horasFrioAcumuladas: 99,
-    diasGradoAcumulados: null,
-    agroclimaObservacion: 'Agroclima parcial. Cobertura: 40 dias con datos y 15 sin datos.',
-  });
-
-  assert.equal(esMejorParcial(actual, mejor), true);
-  assert.equal(decidirAccion(actual, mejor).accion, 'ACTUALIZARIA');
-  assert.equal(decidirAccion(actual, peor).accion, 'NO_DEGRADAR');
+test('acepta cortes de grados dia y horas frio cuando existe estacion y fecha de corte valida', () => {
+  assert.equal(clasificarPropuesta(crearSnapshot()), 'ACTUALIZABLE');
+  assert.equal(clasificarPropuesta(crearSnapshot({ horasFrioAcumuladas: 431.53, diasGradoAcumulados: null })), 'ACTUALIZABLE');
+  assert.equal(calcularFechaCorteEsperada('2026-08-13'), '2026-08-12');
+  assert.equal(formatearDecimal(19.1667), '19.17');
 });
 
-test('no degrada un snapshot OK cuando MeteoFEAL propone SIN_DATOS', () => {
-  const actualOk = crearSnapshot({ diasGradoAcumulados: 9.11 });
-  const sinDatos = crearSnapshot({
-    diasGradoAcumulados: null,
-    estacionMeteoUuid: null,
-    nombreEstacionMeteo: null,
-    fechaCorteAgroclima: null,
-    semanaIsoCorte: null,
-    temporadaAgroclima: null,
-    agroclimaObservacion: 'Sin datos agroclimaticos para la fecha de corte.',
-  });
-
-  assert.equal(decidirAccion(actualOk, sinDatos).accion, 'NO_DEGRADAR');
-});
-
-test('reporta ERROR sin escribir cuando MeteoFEAL no entrega un snapshot utilizable', () => {
-  const actualOk = crearSnapshot({ diasGradoAcumulados: 9.11 });
-  const error = crearSnapshot({
-    diasGradoAcumulados: null,
-    estacionMeteoUuid: null,
-    nombreEstacionMeteo: null,
-    fechaCorteAgroclima: null,
-    semanaIsoCorte: null,
-    temporadaAgroclima: null,
-    agroclimaObservacion: 'Error al consultar Meteo FEAL.',
-  });
-
-  assert.equal(decidirAccion(actualOk, error).accion, 'ERROR');
-});
-
-test('reporta fundo sin estacion sin intentar escritura', async () => {
+test('conserva la estacion secundaria elegida por el servicio compartido', async () => {
   const dependencias = crearDependencias({
-    snapshot: crearSnapshot({
-      diasGradoAcumulados: null,
-      estacionMeteoUuid: null,
-      nombreEstacionMeteo: null,
-      fechaCorteAgroclima: null,
-      semanaIsoCorte: null,
-      temporadaAgroclima: null,
-      agroclimaObservacion: 'Sin estacion meteorologica asociada al fundo.',
-    }),
+    snapshot: crearSnapshot({ nombreEstacionMeteo: 'Respaldo NTC' }),
   });
-
-  const resumen = await ejecutarBackfill(opciones(), dependencias);
-
-  assert.deepEqual(dependencias.actualizaciones, []);
-  assert.equal(resumen.sinEstacion, 1);
+  await ejecutarBackfill(opciones(), dependencias);
+  const registro = dependencias.logs.find(([, evento]) => evento.endsWith('[REGISTRO]'));
+  assert.equal(registro[2].estacion_propuesta, 'Respaldo NTC');
 });
 
-test('el apply entrega exclusivamente snapshot y estado actual al repositorio', async () => {
-  const dependencias = crearDependencias();
+test('clasifica SIN_DATOS, SIN_ESTACION, NO_APLICA y ERROR sin actualizar', async () => {
+  const casos = [
+    ['SIN_DATOS', crearSnapshot({ diasGradoAcumulados: null, estacionMeteoUuid: null, nombreEstacionMeteo: null, fechaCorteAgroclima: null, agroclimaObservacion: 'Sin datos agroclimaticos para la fecha de corte.' })],
+    ['SIN_ESTACION', crearSnapshot({ diasGradoAcumulados: null, estacionMeteoUuid: null, nombreEstacionMeteo: null, fechaCorteAgroclima: null, agroclimaObservacion: 'Sin estacion meteorologica asociada al fundo.' })],
+    ['NO_APLICA', crearSnapshot({ diasGradoAcumulados: null, estacionMeteoUuid: null, nombreEstacionMeteo: null, fechaCorteAgroclima: null, agroclimaObservacion: 'No corresponde calcular horas frio ni grados dia para la fecha de corte.' })],
+    ['ERROR', crearSnapshot({ diasGradoAcumulados: null, estacionMeteoUuid: null, nombreEstacionMeteo: null, fechaCorteAgroclima: null, agroclimaObservacion: 'Error al consultar Meteo FEAL.' })],
+  ];
 
-  const resumen = await ejecutarBackfill(opciones({ apply: true }), dependencias);
-
-  assert.equal(resumen.actualizados, 1);
-  assert.equal(dependencias.actualizaciones.length, 1);
-  const [idMonitoreo, snapshot, actual] = dependencias.actualizaciones[0];
-  assert.equal(idMonitoreo, 439);
-  assert.deepEqual(Object.keys(snapshot).sort(), [
-    'agroclimaObservacion',
-    'diasGradoAcumulados',
-    'estacionMeteoUuid',
-    'fechaCorteAgroclima',
-    'horasFrioAcumuladas',
-    'nombreEstacionMeteo',
-    'semanaIsoCorte',
-    'temporadaAgroclima',
-  ]);
-  assert.equal(snapshot.diasGradoAcumulados, 4.36);
-  assert.equal(actual.diasGradoAcumulados, null);
+  for (const [estado, snapshot] of casos) {
+    const dependencias = crearDependencias({ snapshot });
+    const resumen = await ejecutarBackfill(opciones(), dependencias);
+    assert.equal(resumen.actualizables, 0);
+    assert.deepEqual(dependencias.actualizaciones, []);
+    assert.equal(resumen[estado === 'SIN_DATOS' ? 'sinDatos' : estado === 'SIN_ESTACION' ? 'sinEstacion' : estado === 'NO_APLICA' ? 'noAplica' : 'errores'], 1);
+  }
 });
 
-test('formatea Horas Frio y Dias Grado a dos decimales', () => {
-  assert.equal(formatearDecimal(9.1111), '9.11');
-  assert.equal(formatearDecimal(4.3611), '4.36');
-  assert.equal(formatearDecimal(null), 'NULL');
+test('apply usa guardia atomica por ID, fecha y ambas metricas pendientes; cero filas es CAMBIO_CONCURRENTE', async () => {
+  const dependencias = crearDependencias({ filasActualizadas: 0 });
+  const resumen = await ejecutarBackfill(opciones({ apply: true, dryRun: false }), dependencias);
+
+  assert.equal(resumen.cambiosConcurrentes, 1);
+  assert.equal(resumen.actualizables, 0);
+  assert.deepEqual(dependencias.actualizaciones[0].slice(0, 2), [441, '2026-08-13']);
 });
 
-test('calcula el corte historico como un dia calendario antes de fecha_monitoreo', () => {
-  assert.equal(calcularFechaCorteEsperada('2026-08-11'), '2026-08-10');
+test('el SQL selecciona solo cabeceras pendientes y el UPDATE toca exclusivamente ocho campos agroclimaticos', () => {
+  const contenido = fs.readFileSync(path.join(__dirname, '..', 'src', 'repositories', 'agroclima.repository.js'), 'utf8');
+  const inicioLista = contenido.indexOf('async listarMonitoreosChanchitosPendientesBackfill');
+  const inicioUpdate = contenido.indexOf('async actualizarSnapshotChanchitosPendiente', inicioLista);
+  const consultaLista = contenido.slice(inicioLista, inicioUpdate);
+  const consultaUpdate = contenido.slice(inicioUpdate, contenido.indexOf('async createRequest', inicioUpdate));
+
+  assert.match(consultaLista, /FROM dbo\.MONI_CABECERAMONITOREO cab/);
+  assert.match(consultaLista, /cab\.horas_frio_acumuladas IS NULL/);
+  assert.match(consultaLista, /cab\.dias_grado_acumulados IS NULL/);
+  assert.doesNotMatch(consultaLista, /id_catalogo_sdp/);
+  assert.match(consultaUpdate, /WHERE id_monitoreo = @idMonitoreo\s+AND fecha_monitoreo = @fechaMonitoreo\s+AND horas_frio_acumuladas IS NULL\s+AND dias_grado_acumulados IS NULL/s);
+  for (const columna of ['horas_frio_acumuladas', 'dias_grado_acumulados', 'estacion_meteo_uuid', 'nombre_estacion_meteo', 'fecha_corte_agroclima', 'semana_iso_corte', 'temporada_agroclima', 'agroclima_observacion']) {
+    assert.match(consultaUpdate, new RegExp(`${columna} = @`));
+  }
+  assert.doesNotMatch(consultaUpdate, /id_catalogo_sdp\s*=/);
+  assert.doesNotMatch(consultaUpdate, /\bSDP\s*=/i);
+  assert.doesNotMatch(consultaUpdate, /\bCSG\s*=/i);
 });

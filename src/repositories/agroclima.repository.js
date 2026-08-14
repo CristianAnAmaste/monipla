@@ -198,6 +198,62 @@ class AgroclimaRepository {
     return result.recordset || [];
   }
 
+  async listarMonitoreosChanchitosPendientesBackfill({
+    ids = [],
+    fechaDesde = null,
+    fechaHasta = null,
+    genFundo = null,
+    limit = null,
+  } = {}) {
+    const request = await this.createRequest();
+    const idsValidos = [...new Set((Array.isArray(ids) ? ids : [])
+      .filter((id) => Number.isSafeInteger(id) && id > 0))];
+
+    request
+      .input('fechaDesde', sql.Date, fechaDesde)
+      .input('fechaHasta', sql.Date, fechaHasta)
+      .input('genFundo', sql.Int, genFundo)
+      .input('limit', sql.Int, limit);
+
+    const parametrosIds = idsValidos.map((id, index) => {
+      const nombre = `id${index}`;
+      request.input(nombre, sql.Int, id);
+      return `@${nombre}`;
+    });
+
+    const filtroIds = parametrosIds.length > 0
+      ? `AND cab.id_monitoreo IN (${parametrosIds.join(', ')})`
+      : '';
+
+    const result = await request.query(`
+      SELECT TOP (ISNULL(@limit, 2147483647))
+        cab.id_monitoreo,
+        cab.gen_fundo,
+        CONVERT(char(10), cab.fecha_monitoreo, 23) AS fecha_monitoreo,
+        cab.horas_frio_acumuladas AS horas_frio_actuales,
+        cab.dias_grado_acumulados AS dias_grado_actuales,
+        cab.estacion_meteo_uuid AS estacion_uuid_actual,
+        cab.nombre_estacion_meteo AS nombre_estacion_actual,
+        CONVERT(char(10), cab.fecha_corte_agroclima, 23) AS fecha_corte_actual,
+        cab.semana_iso_corte AS semana_iso_actual,
+        cab.temporada_agroclima AS temporada_actual,
+        cab.agroclima_observacion AS observacion_actual
+      FROM dbo.MONI_CABECERAMONITOREO cab
+      WHERE cab.id_monitoreo > 0
+        AND cab.gen_fundo > 0
+        AND cab.fecha_monitoreo IS NOT NULL
+        AND cab.horas_frio_acumuladas IS NULL
+        AND cab.dias_grado_acumulados IS NULL
+        ${filtroIds}
+        AND (@fechaDesde IS NULL OR cab.fecha_monitoreo >= @fechaDesde)
+        AND (@fechaHasta IS NULL OR cab.fecha_monitoreo <= @fechaHasta)
+        AND (@genFundo IS NULL OR cab.gen_fundo = @genFundo)
+      ORDER BY cab.fecha_monitoreo ASC, cab.id_monitoreo ASC;
+    `);
+
+    return result.recordset || [];
+  }
+
   async listarMonitoreosChanchitosPendientesReconciliacion({ fechaDesde, fechaHasta }) {
     const request = await this.createRequest();
 
@@ -294,6 +350,40 @@ class AgroclimaRepository {
           AND (semana_iso_corte = @semanaIsoCorteActual OR (semana_iso_corte IS NULL AND @semanaIsoCorteActual IS NULL))
           AND (temporada_agroclima = @temporadaAgroclimaActual OR (temporada_agroclima IS NULL AND @temporadaAgroclimaActual IS NULL))
           AND (agroclima_observacion = @agroclimaObservacionActual OR (agroclima_observacion IS NULL AND @agroclimaObservacionActual IS NULL))
+      `);
+
+    return result.rowsAffected[0] || 0;
+  }
+
+  async actualizarSnapshotChanchitosPendiente(idMonitoreo, fechaMonitoreo, snapshot) {
+    const request = await this.createRequest();
+
+    const result = await request
+      .input('idMonitoreo', sql.Int, idMonitoreo)
+      .input('fechaMonitoreo', sql.Date, fechaMonitoreo)
+      .input('horasFrioAcumuladas', sql.Decimal(10, 2), snapshot.horasFrioAcumuladas ?? null)
+      .input('diasGradoAcumulados', sql.Decimal(10, 2), snapshot.diasGradoAcumulados ?? null)
+      .input('estacionMeteoUuid', sql.UniqueIdentifier, snapshot.estacionMeteoUuid || null)
+      .input('nombreEstacionMeteo', sql.NVarChar(100), snapshot.nombreEstacionMeteo || null)
+      .input('fechaCorteAgroclima', sql.Date, snapshot.fechaCorteAgroclima || null)
+      .input('semanaIsoCorte', sql.TinyInt, snapshot.semanaIsoCorte ?? null)
+      .input('temporadaAgroclima', sql.VarChar(9), snapshot.temporadaAgroclima || null)
+      .input('agroclimaObservacion', sql.NVarChar(250), snapshot.agroclimaObservacion || null)
+      .query(`
+        UPDATE dbo.MONI_CABECERAMONITOREO
+        SET
+          horas_frio_acumuladas = @horasFrioAcumuladas,
+          dias_grado_acumulados = @diasGradoAcumulados,
+          estacion_meteo_uuid = @estacionMeteoUuid,
+          nombre_estacion_meteo = @nombreEstacionMeteo,
+          fecha_corte_agroclima = @fechaCorteAgroclima,
+          semana_iso_corte = @semanaIsoCorte,
+          temporada_agroclima = @temporadaAgroclima,
+          agroclima_observacion = @agroclimaObservacion
+        WHERE id_monitoreo = @idMonitoreo
+          AND fecha_monitoreo = @fechaMonitoreo
+          AND horas_frio_acumuladas IS NULL
+          AND dias_grado_acumulados IS NULL;
       `);
 
     return result.rowsAffected[0] || 0;
