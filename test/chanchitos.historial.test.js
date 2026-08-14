@@ -96,6 +96,25 @@ test('el detalle completa las 12 combinaciones y conserva el total', async () =>
   assert.equal(detalle.totalBichos, 7);
 });
 
+test('el detalle conserva la trazabilidad historica resuelta por el repository', async () => {
+  const { servicio, repository } = crearServicio();
+  repository.obtenerDetalleChanchitos = async () => ({
+    cabecera: crearRegistro({
+      id_monitoreo: 441,
+      id_catalogo_sdp: null,
+      codigo_cuartel: '4',
+      sdp: '60106',
+      csg: '87703',
+      trazabilidad: '0305',
+    }),
+    detalles: [],
+  });
+
+  const detalle = await servicio.obtenerDetalle('441');
+
+  assert.equal(detalle.trazabilidad, '0305');
+});
+
 test('la paginacion se aplica a cabeceras y los detalles se agregan despues por IDs parametrizados', () => {
   const contenido = fs.readFileSync(path.join(__dirname, '..', 'src', 'repositories', 'chanchitos.repository.js'), 'utf8');
 

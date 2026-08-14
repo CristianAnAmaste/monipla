@@ -256,6 +256,45 @@ test('incluye registros nuevos e historicos sin depender de gen_cuartel o id_cat
   assert.equal(historico.matriz[0].celdas[0].cantidad, 0);
 });
 
+test('resuelve trazabilidad nueva e historica sin adivinar y conserva los ceros iniciales', () => {
+  const { servicio } = crearServicio();
+  const cabeceras = [441, 442, 443, 444, 445, 446].map((id_monitoreo) => ({
+    ...nuevo438,
+    id_monitoreo,
+    id_catalogo_sdp: id_monitoreo === 446 ? 99 : null,
+    trazabilidad: null,
+  }));
+  const detalles = cabeceras.flatMap((cabecera) => filasDetalle(cabecera)
+    .map(({ id_monitoreo, id_estadomonitoreo, id_estadoposicion, cantidad_bichos }) => ({
+      id_monitoreo, id_estadomonitoreo, id_estadoposicion, cantidad_bichos,
+    })));
+  const monitoreos = servicio.agruparMonitoreos({
+    cabeceras,
+    detalles,
+    catalogos: [{ id_catalogo_sdp: 99, codigo_trazabilidad: 'N/A' }],
+    trazabilidades: [
+      { id_monitoreo: 441, codigo_trazabilidad: '0305', cantidad_coincidencias: 1, cantidad_trazabilidades_distintas: 1, estado_resolucion: 'HISTORICA_UNICA' },
+      { id_monitoreo: 442, codigo_trazabilidad: '0305', cantidad_coincidencias: 1, cantidad_trazabilidades_distintas: 1, estado_resolucion: 'HISTORICA_UNICA' },
+      { id_monitoreo: 443, codigo_trazabilidad: '4958', cantidad_coincidencias: 1, cantidad_trazabilidades_distintas: 1, estado_resolucion: 'HISTORICA_UNICA' },
+      { id_monitoreo: 444, codigo_trazabilidad: null, cantidad_coincidencias: 1, cantidad_trazabilidades_distintas: 0, estado_resolucion: 'SIN_TRAZABILIDAD' },
+      { id_monitoreo: 445, codigo_trazabilidad: null, cantidad_coincidencias: 2, cantidad_trazabilidades_distintas: 2, estado_resolucion: 'AMBIGUA' },
+      { id_monitoreo: 446, codigo_trazabilidad: '0009', cantidad_coincidencias: 1, cantidad_trazabilidades_distintas: 1, estado_resolucion: 'POR_ID_CATALOGO' },
+    ],
+  });
+  const porId = new Map(monitoreos.map((monitoreo) => [monitoreo.idMonitoreo, monitoreo]));
+
+  assert.equal(porId.get(441).trazabilidad, '0305');
+  assert.equal(porId.get(442).trazabilidad, '0305');
+  assert.equal(porId.get(443).trazabilidad, '4958');
+  assert.equal(porId.get(444).trazabilidad, '');
+  assert.equal(porId.get(445).trazabilidad, '');
+  assert.equal(porId.get(445).trazabilidadEstadoResolucion, 'AMBIGUA');
+  assert.equal(porId.get(446).trazabilidad, '0009');
+  assert.equal(porId.get(446).trazabilidadEstadoResolucion, 'POR_ID_CATALOGO');
+  assert.equal(servicio.normalizarTrazabilidad(' N/A '), '');
+  assert.equal(servicio.normalizarTrazabilidad('S/SDP'), '');
+});
+
 test('preserva cuarteles alfanumericos y detecta detalles faltantes o duplicados', () => {
   const filas = filasDetalle({ ...nuevo438, codigo_cuartel: '6A', observaciones: null }, [2]);
   filas.pop();

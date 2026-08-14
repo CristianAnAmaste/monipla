@@ -129,6 +129,13 @@ class ChanchitosPdfService {
     const camposPorId = new Map((datos.campos || []).map((item) => [Number(item.id), item.nombre]));
     const variedadesPorId = new Map((datos.variedades || []).map((item) => [Number(item.id), item.nombre]));
     const cuartelesPorId = new Map((datos.cuarteles || []).map((item) => [Number(item.id), item]));
+    const trazabilidadesPorMonitoreo = new Map((datos.trazabilidades || []).map((item) => [
+      Number(item.id_monitoreo),
+      {
+        codigo: this.normalizarTrazabilidad(item.codigo_trazabilidad),
+        estadoResolucion: item.estado_resolucion || null,
+      },
+    ]));
 
     for (const fila of cabeceras) {
       const idMonitoreo = Number(fila.id_monitoreo);
@@ -138,6 +145,7 @@ class ChanchitosPdfService {
       }
 
       if (!monitoreos.has(idMonitoreo)) {
+        const trazabilidadResuelta = trazabilidadesPorMonitoreo.get(idMonitoreo);
         monitoreos.set(idMonitoreo, {
           idMonitoreo,
           fechaMonitoreo: fila.fecha_monitoreo,
@@ -147,9 +155,10 @@ class ChanchitosPdfService {
           cuartel: fila.codigo_cuartel || cuartelesPorId.get(Number(fila.gen_cuartel))?.codigo_cuartel || catalogosPorId.get(Number(fila.id_catalogo_sdp))?.cuartel || '-',
           sdp: fila.sdp,
           csg: fila.csg,
-          trazabilidad: fila.trazabilidad
-            || catalogosPorId.get(Number(fila.id_catalogo_sdp))?.codigo_trazabilidad
-            || '',
+          trazabilidad: trazabilidadResuelta?.codigo
+            || this.normalizarTrazabilidad(fila.trazabilidad)
+            || this.normalizarTrazabilidad(catalogosPorId.get(Number(fila.id_catalogo_sdp))?.codigo_trazabilidad),
+          trazabilidadEstadoResolucion: trazabilidadResuelta?.estadoResolucion || null,
           estadoFenologico: fila.nombre_estado_fenologico
             || nombresEstadosFenologicos.get(Number(fila.id_estadofenologico))
             || '',
@@ -631,6 +640,11 @@ class ChanchitosPdfService {
     if (value === null || value === undefined || value === '') return null;
     const numero = Number(value);
     return Number.isFinite(numero) ? numero : null;
+  }
+
+  normalizarTrazabilidad(value) {
+    const trazabilidad = this.valor(value, '');
+    return ['N/A', 'S/SDP'].includes(trazabilidad.toUpperCase()) ? '' : trazabilidad;
   }
 
   descripcionAgroclima(monitoreo) {

@@ -329,6 +329,7 @@ test('consulta el PDF general de Chanchitos con cabeceras y detalles separados y
   assert.deepEqual(filas.cuarteles, []);
   assert.deepEqual(filas.monitoreadores, []);
   assert.deepEqual(filas.estadosFenologicos, []);
+  assert.deepEqual(filas.trazabilidades, []);
   const consulta = state.consultas.at(-1);
   assert.match(consulta.texto, /CREATE TABLE #ChanchitosFiltrados \(id_monitoreo INT NOT NULL PRIMARY KEY\)/);
   assert.match(consulta.texto, /INSERT INTO #ChanchitosFiltrados \(id_monitoreo\)/);
@@ -338,6 +339,16 @@ test('consulta el PDF general de Chanchitos con cabeceras y detalles separados y
   assert.match(consulta.texto, /CONVERT\(nvarchar\(100\), cab\.codigo_cuartel\)/);
   assert.match(consulta.texto, /CONVERT\(nvarchar\(100\), cab\.sdp\)/);
   assert.match(consulta.texto, /CONVERT\(nvarchar\(100\), cab\.CSG\)/);
+  assert.match(consulta.texto, /CREATE TABLE #TrazabilidadCoincidencias/);
+  assert.match(consulta.texto, /mbHistorico\.gen_fundo = cp\.gen_fundo/);
+  assert.match(consulta.texto, /mbHistorico\.gen_campo = cp\.gen_campo/);
+  assert.match(consulta.texto, /mbHistorico\.gen_variedad = cp\.gen_variedad/);
+  assert.match(consulta.texto, /csg_normalizado/);
+  assert.match(consulta.texto, /COUNT\(DISTINCT codigo_trazabilidad\)/);
+  assert.match(consulta.texto, /HISTORICA_UNICA/);
+  assert.match(consulta.texto, /AMBIGUA/);
+  assert.match(consulta.texto, /POR_ID_CATALOGO/);
+  assert.match(consulta.texto, /#CabecerasPdf cp/);
   assert.match(consulta.texto, /ORDER BY\s+cp\.fecha_monitoreo DESC,\s+cp\.id_monitoreo DESC/i);
   assert.doesNotMatch(consulta.texto, /LEFT JOIN dbo\.MONIPLA_CATALOGO_SDP_MB mb ON mb\.id_catalogo_sdp = cp\.id_catalogo_sdp/i);
   assert.doesNotMatch(consulta.texto, /IN \(\$\{placeholders\.join/);
@@ -355,6 +366,32 @@ test('consulta el PDF general de Chanchitos con cabeceras y detalles separados y
     { nombre: 'idEstadoFenologico', tipo: 'INT', valor: null },
     { nombre: 'deteccion', tipo: 'VARCHAR(20)', valor: null },
   ]);
+});
+
+test('la trazabilidad historica se resuelve en un resultset set-based y el detalle conserva la misma regla', () => {
+  const contenido = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'repositories', 'chanchitos.repository.js'),
+    'utf8',
+  );
+  const inicioPdf = contenido.indexOf('CREATE TABLE #TrazabilidadCoincidencias');
+  const finPdf = contenido.indexOf('FROM #CabecerasPdf cp\n        LEFT JOIN #CatalogosPdf', inicioPdf);
+  const bloquePdf = contenido.slice(inicioPdf, finPdf);
+  const inicioDetalle = contenido.indexOf('OUTER APPLY (\n          SELECT CONVERT(nvarchar(100), gcuHistorico.CODIGO)');
+  const finDetalle = contenido.indexOf('${this.obtenerJoinsPresentacionHistorialChanchitos()}', inicioDetalle);
+  const bloqueDetalle = contenido.slice(inicioDetalle, finDetalle);
+
+  assert.match(contenido, /LEFT JOIN dbo\.GEN_CUARTEL gcuHistorico/);
+  assert.match(contenido, /CREATE TABLE #CabecerasTrazabilidadHistorica/);
+  assert.match(bloquePdf, /FROM #TrazabilidadHistoricaNormalizada cp/);
+  assert.match(contenido, /FROM #CabecerasPdf\s+WHERE id_catalogo_sdp IS NULL/);
+  assert.match(bloquePdf, /cp\.csg_normalizado/);
+  assert.match(bloquePdf, /cantidad_trazabilidades_distintas/);
+  assert.doesNotMatch(bloquePdf, /TOP\s+1/i);
+  assert.match(bloqueDetalle, /cab\.id_catalogo_sdp IS NULL/);
+  assert.match(bloqueDetalle, /cuartelHistorico\.codigo_cuartel/);
+  assert.match(bloqueDetalle, /COUNT\(DISTINCT coincidencia\.codigo_trazabilidad\)/);
+  assert.match(contenido, /WHEN trazabilidadHistorica\.cantidad_trazabilidades_distintas = 1/);
+  assert.match(contenido, /NULLIF\(NULLIF\(NULLIF\(LTRIM\(RTRIM\(CONVERT\(nvarchar\(100\), mb\.codigo_trazabilidad\)\)\), ''\), 'N\/A'\), 'S\/SDP'\)/);
 });
 
 test('el formulario usa el ID como valor y el nombre como etiqueta del monitoreador', () => {
