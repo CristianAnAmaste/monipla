@@ -9,6 +9,7 @@ const homeRoutes = require('./routes/home.routes');
 const usuariosRoutes = require('./routes/usuarios.routes');
 const monitoreosRoutes = require('./routes/monitoreos.routes');
 const chanchitosRoutes = require('./routes/chanchitos.routes');
+const reactAppRoutes = require('./routes/reactApp.routes');
 const NavigationService = require('./services/navigation.service');
 
 const app = express();
@@ -22,6 +23,9 @@ app.use(express.urlencoded({ extended: false }));
 app.use(express.json());
 
 app.use(express.static(path.join(__dirname, 'public')));
+app.use('/react-app/assets', express.static(path.join(__dirname, '..', 'frontend', 'dist', 'assets'), {
+  index: false,
+}));
 
 app.use(
   session({
@@ -61,6 +65,7 @@ app.get('/', (req, res) => {
 });
 
 app.use(authRoutes);
+app.use(reactAppRoutes);
 app.use(homeRoutes);
 app.use(usuariosRoutes);
 app.use(monitoreosRoutes);

@@ -3,18 +3,19 @@ import MobileSidebar from '../navigation/MobileSidebar';
 import Sidebar from '../navigation/Sidebar';
 import Topbar from './Topbar';
 
-function AppShell({ user, currentPath, children }) {
+function AppShell({ user, menu, currentPath, children }) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   return (
     <div className="min-h-svh bg-[#f4f7f2] lg:pl-[270px]">
       <div className="fixed inset-y-0 left-0 z-30 hidden lg:block">
-        <Sidebar user={user} currentPath={currentPath} />
+        <Sidebar user={user} menu={menu} currentPath={currentPath} />
       </div>
       <MobileSidebar
         isOpen={isMobileMenuOpen}
         onClose={() => setIsMobileMenuOpen(false)}
         user={user}
+        menu={menu}
         currentPath={currentPath}
       />
       <div className="flex min-h-svh flex-col">

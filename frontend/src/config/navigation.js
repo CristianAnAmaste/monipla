@@ -45,3 +45,28 @@ export const administrationNavigationItem = {
 export function isRouteActive(currentPath, href) {
   return currentPath === href || currentPath.startsWith(`${href}/`);
 }
+
+export function getAuthorizedNavigation(menu = []) {
+  const itemsByHref = new Map(menu.map((item) => [item.href, item]));
+  const authorize = (item) => {
+    const authorizedItem = itemsByHref.get(item.href);
+
+    return authorizedItem ? { ...item, label: authorizedItem.label } : null;
+  };
+
+  return {
+    home: authorize(homeNavigationItem),
+    groups: navigationGroups
+      .map((group) => ({
+        ...group,
+        items: group.items.map(authorize).filter(Boolean),
+      }))
+      .filter((group) => group.items.length > 0),
+    administration: authorize(administrationNavigationItem),
+    logout: itemsByHref.get('/logout') || null,
+  };
+}
+
+export function getAuthorizedHrefs(menu = []) {
+  return new Set(menu.map((item) => item.href));
+}

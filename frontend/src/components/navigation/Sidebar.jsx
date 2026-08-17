@@ -1,15 +1,11 @@
 import { Leaf, LogOut } from 'lucide-react';
-import {
-  administrationNavigationItem,
-  homeNavigationItem,
-  navigationGroups,
-} from '../../config/navigation';
+import { getAuthorizedNavigation } from '../../config/navigation';
 import UserProfile from '../layout/UserProfile';
 import SidebarGroup from './SidebarGroup';
 import SidebarItem from './SidebarItem';
 
-function Sidebar({ user, currentPath, onNavigate, className = '' }) {
-  const isAdmin = user?.rol === 'admin';
+function Sidebar({ user, menu, currentPath, onNavigate, className = '' }) {
+  const navigation = getAuthorizedNavigation(menu);
 
   return (
     <aside className={`flex h-full min-h-0 w-[270px] flex-col bg-[#173d26] text-white ${className}`} aria-label="Menú principal">
@@ -26,29 +22,31 @@ function Sidebar({ user, currentPath, onNavigate, className = '' }) {
       </a>
 
       <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4" aria-label="Navegación principal">
-        <SidebarItem item={homeNavigationItem} currentPath={currentPath} onNavigate={onNavigate} />
-        <div className="my-3 border-t border-[#315b39]" />
-        {navigationGroups.map((group) => (
+        {navigation.home && <SidebarItem item={navigation.home} currentPath={currentPath} onNavigate={onNavigate} />}
+        {navigation.home && navigation.groups.length > 0 && <div className="my-3 border-t border-[#315b39]" />}
+        {navigation.groups.map((group) => (
           <SidebarGroup key={group.id} group={group} currentPath={currentPath} onNavigate={onNavigate} />
         ))}
-        {isAdmin && (
+        {navigation.administration && (
           <>
             <div className="my-3 border-t border-[#315b39]" />
-            <SidebarItem item={administrationNavigationItem} currentPath={currentPath} onNavigate={onNavigate} />
+            <SidebarItem item={navigation.administration} currentPath={currentPath} onNavigate={onNavigate} />
           </>
         )}
       </nav>
 
       <div className="shrink-0 border-t border-[#315b39] p-3">
         <UserProfile user={user} />
-        <a
-          className="mt-2 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[#e7c8b0] transition-colors hover:bg-[#315b39] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#a8d5a2]"
-          href="/logout"
-          onClick={onNavigate}
-        >
-          <LogOut className="size-4" strokeWidth={1.9} aria-hidden="true" />
-          Cerrar sesión
-        </a>
+        {navigation.logout && (
+          <a
+            className="mt-2 flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-[#e7c8b0] transition-colors hover:bg-[#315b39] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#a8d5a2]"
+            href={navigation.logout.href}
+            onClick={onNavigate}
+          >
+            <LogOut className="size-4" strokeWidth={1.9} aria-hidden="true" />
+            {navigation.logout.label}
+          </a>
+        )}
       </div>
     </aside>
   );

@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import Sidebar from './Sidebar';
 
-function MobileSidebar({ isOpen, onClose, user, currentPath }) {
+function MobileSidebar({ isOpen, onClose, user, menu, currentPath }) {
   useEffect(() => {
     if (!isOpen) {
       return undefined;
@@ -37,7 +37,7 @@ function MobileSidebar({ isOpen, onClose, user, currentPath }) {
         aria-label="Cerrar menú móvil"
       />
       <div className="relative h-full w-[min(84vw,300px)] shadow-2xl">
-        <Sidebar user={user} currentPath={currentPath} onNavigate={onClose} className="w-full shadow-none" />
+        <Sidebar user={user} menu={menu} currentPath={currentPath} onNavigate={onClose} className="w-full shadow-none" />
         <button
           type="button"
           className="absolute right-3 top-3 flex size-9 items-center justify-center rounded-lg text-white hover:bg-[#315b39] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#a8d5a2]"

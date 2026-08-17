@@ -1,7 +1,9 @@
 import DashboardGrid from '../components/dashboard/DashboardGrid';
+import { getAuthorizedHrefs } from '../config/navigation';
 
-function DashboardPage({ user }) {
+function DashboardPage({ user, menu }) {
   const name = user?.nombre?.trim() || 'usuario';
+  const allowedHrefs = getAuthorizedHrefs(menu);
 
   return (
     <div className="mx-auto w-full max-w-6xl">
@@ -12,7 +14,7 @@ function DashboardPage({ user }) {
           Centralice las tareas principales de monitoreo agrícola y mantenga el registro de terreno al alcance.
         </p>
       </section>
-      <DashboardGrid isAdmin={user?.rol === 'admin'} />
+      <DashboardGrid allowedHrefs={allowedHrefs} />
     </div>
   );
 }

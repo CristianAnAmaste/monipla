@@ -1,7 +1,7 @@
 import { Bug, Search, Users } from 'lucide-react';
 import DashboardCard from './DashboardCard';
 
-function DashboardGrid({ isAdmin }) {
+function DashboardGrid({ allowedHrefs }) {
   const cards = [
     {
       title: 'Monitoreo de Plagas',
@@ -26,7 +26,7 @@ function DashboardGrid({ isAdmin }) {
     },
   ];
 
-  if (isAdmin) {
+  if (allowedHrefs.has('/usuarios')) {
     cards.push({
       title: 'Administración',
       description: 'Gestione los usuarios con acceso al sistema interno de monitoreo.',
@@ -36,9 +36,16 @@ function DashboardGrid({ isAdmin }) {
     });
   }
 
+  const visibleCards = cards
+    .map((card) => ({
+      ...card,
+      actions: card.actions.filter((action) => allowedHrefs.has(action.href)),
+    }))
+    .filter((card) => card.actions.length > 0);
+
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-      {cards.map((card) => (
+      {visibleCards.map((card) => (
         <DashboardCard key={card.title} {...card} />
       ))}
     </div>
