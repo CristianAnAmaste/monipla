@@ -1,6 +1,7 @@
 const ChanchitosRepository = require('../repositories/chanchitos.repository');
 const CatalogoSdpService = require('./catalogoSdp.service');
 const AgroclimaMoniplaService = require('./agroclimaMonipla.service');
+const { performance } = require('node:perf_hooks');
 
 const MAX_INT = 2147483647;
 const ESTADOS = [1, 2, 3];
@@ -110,6 +111,7 @@ class ChanchitosService {
   }
 
   async obtenerHistorial(query = {}) {
+    const inicioTotal = performance.now();
     const values = this.normalizarFiltrosHistorial(query);
     const errors = this.validarFiltrosHistorial(values);
 
@@ -117,36 +119,38 @@ class ChanchitosService {
       return this.crearResultadoHistorialInvalido(values, errors);
     }
 
-    const [consultaInicial, opciones] = await Promise.all([
-      this.chanchitosRepository.obtenerHistorialConsolidado(values, values.pagina, values.pageSize),
-      this.obtenerOpcionesHistorial(),
+    const medir = async (nombre, operacion, metricas) => {
+      const inicio = performance.now();
+      const resultado = await operacion();
+      metricas[nombre] = Math.round(performance.now() - inicio);
+      return resultado;
+    };
+    const metricas = {};
+    const [resumen, opciones] = await Promise.all([
+      medir('resumenMs', () => this.chanchitosRepository.obtenerResumenHistorialChanchitos(values), metricas),
+      medir('opcionesMs', () => this.obtenerOpcionesHistorial(), metricas),
     ]);
-    const totalRegistros = Number(consultaInicial.totalRegistros || 0);
+    const totalRegistros = Number(resumen.total_registros || 0);
     const totalPaginas = Math.max(1, Math.ceil(totalRegistros / values.pageSize));
     const pagina = Math.min(values.pagina, totalPaginas);
-    const consulta = pagina === values.pagina
-      ? consultaInicial
-      : await this.chanchitosRepository.obtenerHistorialConsolidado(values, pagina, values.pageSize);
-    const resumen = consulta.resumen;
     const filtros = { ...values, pagina };
-    const detallesPorMonitoreo = new Map();
-    (consulta.detalles || []).forEach((detalle) => {
-      const actual = detallesPorMonitoreo.get(detalle.id_monitoreo) || { total_bichos: 0, posiciones_con_deteccion: 0 };
-      actual.total_bichos += Number(detalle.cantidad_bichos || 0);
-      actual.posiciones_con_deteccion += Number(detalle.cantidad_bichos || 0) > 0 ? 1 : 0;
-      detallesPorMonitoreo.set(detalle.id_monitoreo, actual);
-    });
-    const registros = (consulta.cabeceras || []).map((registro) => ({
-      ...registro,
-      ...(detallesPorMonitoreo.get(registro.id_monitoreo) || {}),
-    }));
+    const registros = await medir(
+      'paginaMs',
+      () => this.chanchitosRepository.listarHistorialChanchitos(filtros, pagina, values.pageSize),
+      metricas
+    );
+    const inicioPreparacion = performance.now();
+    const registrosPreparados = registros.map((registro) => this.prepararRegistroHistorial(registro, opciones));
+    metricas.preparacionMs = Math.max(0, Math.round(performance.now() - inicioPreparacion));
+    metricas.totalMs = Math.round(performance.now() - inicioTotal);
+    console.info('[MONIPLA][CHANCHITOS][HISTORIAL][PERF]', metricas);
 
     return {
       success: true,
       errors: [],
       values: filtros,
       opciones,
-      registros: registros.map((registro) => this.prepararRegistroHistorial(registro, opciones)),
+      registros: registrosPreparados,
       resumen: {
         totalMonitoreos: totalRegistros,
         totalPlantas: Number(resumen.total_plantas || 0),
@@ -191,16 +195,16 @@ class ChanchitosService {
   }
 
   async obtenerDetalle(idMonitoreo) {
+    const inicioTotal = performance.now();
     const id = this.normalizarId(idMonitoreo);
 
     if (!id) {
       throw new Error('CHANCHITO_NO_EXISTE');
     }
 
-    const [resultado, opciones] = await Promise.all([
-      this.chanchitosRepository.obtenerDetalleChanchitos(id),
-      this.obtenerOpcionesHistorial(),
-    ]);
+    const inicioConsulta = performance.now();
+    const resultado = await this.chanchitosRepository.obtenerDetalleChanchitos(id);
+    const consultaMs = Math.round(performance.now() - inicioConsulta);
 
     if (!resultado || !resultado.cabecera) {
       throw new Error('CHANCHITO_NO_EXISTE');
@@ -212,8 +216,8 @@ class ChanchitosService {
       Number(detalle.cantidad_bichos || 0),
     ]));
 
-    return {
-      ...this.prepararRegistroHistorial(cabecera, opciones),
+    const detalle = {
+      ...this.prepararRegistroHistorial(cabecera),
       fechaRegistro: this.formatearFecha(cabecera.fecha_registro),
       csg: this.textoSeguro(cabecera.csg),
       trazabilidad: this.textoSeguro(cabecera.trazabilidad),
@@ -227,6 +231,12 @@ class ChanchitosService {
         })),
       })),
     };
+    console.info('[MONIPLA][CHANCHITOS][DETALLE][PERF]', {
+      consultaMs,
+      preparacionMs: Math.max(0, Math.round(performance.now() - inicioTotal - consultaMs)),
+      totalMs: Math.round(performance.now() - inicioTotal),
+    });
+    return detalle;
   }
 
   async validarRegistro(data, usuarioSesion) {

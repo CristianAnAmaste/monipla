@@ -434,6 +434,45 @@ test('la trazabilidad historica se resuelve en un resultset set-based y el detal
   assert.match(contenido, /NULLIF\(NULLIF\(NULLIF\(LTRIM\(RTRIM\(CONVERT\(nvarchar\(100\), mb\.codigo_trazabilidad\)\)\), ''\), 'N\/A'\), 'S\/SDP'\)/);
 });
 
+test('el detalle usa un ID parametrizado, entrega nombres puntuales y matriz en un solo batch', () => {
+  const contenido = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'repositories', 'chanchitos.repository.js'),
+    'utf8',
+  ).replace(/\r\n?/g, '\n');
+  const coincidencia = contenido.match(
+    /async obtenerDetalleChanchitos\(idMonitoreo\)\s*\{([\s\S]*?)\n\s*crearRequestHistorial\(pool,\s*filtros\)\s*\{/
+  );
+
+  assert.ok(coincidencia, 'No se pudo localizar obtenerDetalleChanchitos');
+  const bloque = coincidencia[1];
+  assert.match(bloque, /\.input\('idMonitoreo', this\.sql\.Int, idMonitoreo\)/);
+  assert.match(bloque, /LEFT JOIN dbo\.MONI_MONITOREADORES mon ON mon\.id_monitoreador = cab\.id_monitoreador/);
+  assert.match(bloque, /LEFT JOIN dbo\.estado_fenologico ef ON ef\.id_estadofenologico = cab\.id_estadofenologico/);
+  assert.match(bloque, /LTRIM\(RTRIM\(mon\.nombre_monitoreador\)\) AS nombre_monitoreador/);
+  assert.match(bloque, /LTRIM\(RTRIM\(ef\.nom_estadofenologico\)\) AS nombre_estado_fenologico/);
+  assert.match(bloque, /SELECT id_estadomonitoreo, id_estadoposicion/);
+  assert.equal((bloque.match(/pool\.request\(\)/g) || []).length, 1);
+});
+
+test('el helper del detalle prioriza catalogo directo y resuelve historicos desde GEN sin inventar nombres', () => {
+  const contenido = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'repositories', 'chanchitos.repository.js'),
+    'utf8',
+  ).replace(/\r\n?/g, '\n');
+  const coincidencia = contenido.match(
+    /obtenerJoinsPresentacionHistorialChanchitos\(\)\s*\{([\s\S]*?)\n\s*async insertarCabecera/
+  );
+
+  assert.ok(coincidencia, 'No se pudo localizar el helper de presentacion');
+  const helper = coincidencia[1];
+  assert.match(helper, /LEFT JOIN dbo\.MONIPLA_CATALOGO_SDP_MB mb ON mb\.id_catalogo_sdp = cab\.id_catalogo_sdp/);
+  assert.match(helper, /LEFT JOIN dbo\.GEN_CUARTEL gc ON gc\.GEN_CUARTEL = cab\.gen_cuartel/);
+  assert.match(helper, /LEFT JOIN dbo\.GEN_FUNDO f ON f\.Gen_Fundo = COALESCE\(gc\.GEN_FUNDO, cab\.gen_fundo\)/);
+  assert.match(helper, /LEFT JOIN dbo\.GEN_CAMPO c ON c\.Gen_Campo = COALESCE\(gc\.GEN_CAMPO, cab\.gen_campo\)/);
+  assert.match(helper, /LEFT JOIN dbo\.GEN_VARIEDAD v ON v\.gen_variedad = COALESCE\(gc\.GEN_VARIEDAD, cab\.gen_variedad\)/);
+  assert.doesNotMatch(helper, /CONCAT\('Fundo '/);
+});
+
 test('el formulario usa el ID como valor y el nombre como etiqueta del monitoreador', () => {
   const vista = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'views', 'chanchitos', 'nuevo.ejs'),

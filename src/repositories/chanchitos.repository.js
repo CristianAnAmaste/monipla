@@ -469,18 +469,18 @@ class ChanchitosRepository {
           cab.id_monitoreo,
           CONVERT(char(10), cab.fecha_monitoreo, 23) AS fecha_monitoreo,
           CONVERT(char(10), cab.fecha_registro, 23) AS fecha_registro,
-          COALESCE(NULLIF(LTRIM(RTRIM(mb.fundo)), ''), NULLIF(LTRIM(RTRIM(f.Nombre)), ''), CONCAT('Fundo ', cab.gen_fundo)) AS nombre_fundo,
-          COALESCE(NULLIF(LTRIM(RTRIM(mb.nombre_productor)), ''), NULLIF(LTRIM(RTRIM(c.Nombre)), ''), '') AS nombre_campo,
-          COALESCE(NULLIF(LTRIM(RTRIM(mb.variedad)), ''), NULLIF(LTRIM(RTRIM(v.Nombre)), ''), '') AS nombre_variedad,
+          COALESCE(NULLIF(LTRIM(RTRIM(mb.fundo)), ''), NULLIF(LTRIM(RTRIM(gf.Nombre)), '')) AS nombre_fundo,
+          COALESCE(NULLIF(LTRIM(RTRIM(mb.nombre_productor)), ''), NULLIF(LTRIM(RTRIM(gcpo.Nombre)), '')) AS nombre_campo,
+          COALESCE(NULLIF(LTRIM(RTRIM(mb.variedad)), ''), NULLIF(LTRIM(RTRIM(gv.Nombre)), '')) AS nombre_variedad,
           COALESCE(
             NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(100), cab.codigo_cuartel))), ''),
-            NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(100), gc.CODIGO))), ''),
+            NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(100), gcu.CODIGO))), ''),
             NULLIF(LTRIM(RTRIM(CONVERT(nvarchar(100), mb.cuartel))), ''),
             ''
           ) AS codigo_cuartel,
-          COALESCE(CONVERT(nvarchar(100), cab.sdp), CONVERT(nvarchar(100), rel.sdp), CONVERT(nvarchar(100), mb.sdp), '') AS sdp,
-          COALESCE(CONVERT(nvarchar(100), cab.CSG), CONVERT(nvarchar(100), rel.csg), CONVERT(nvarchar(100), mb.codigo_sag), '') AS csg,
-          COALESCE(CONVERT(nvarchar(100), rel.trazabilidad), CONVERT(nvarchar(100), mb.codigo_trazabilidad), '') AS trazabilidad,
+          COALESCE(CONVERT(nvarchar(100), cab.sdp), CONVERT(nvarchar(100), mb.sdp), '') AS sdp,
+          COALESCE(CONVERT(nvarchar(100), cab.CSG), CONVERT(nvarchar(100), mb.codigo_sag), '') AS csg,
+          CONVERT(nvarchar(100), mb.codigo_trazabilidad) AS trazabilidad,
           ISNULL(cab.cant_plantas, 0) AS cant_plantas,
           cab.id_estadofenologico,
           cab.id_monitoreador,
@@ -492,7 +492,11 @@ class ChanchitosRepository {
           cab.agroclima_observacion
         FROM Pagina pagina
         INNER JOIN dbo.MONI_CABECERAMONITOREO cab ON cab.id_monitoreo = pagina.id_monitoreo
-        ${this.obtenerJoinsPresentacionHistorialChanchitos()}
+        LEFT JOIN dbo.MONIPLA_CATALOGO_SDP_MB mb ON mb.id_catalogo_sdp = cab.id_catalogo_sdp
+        LEFT JOIN dbo.GEN_CUARTEL gcu ON gcu.GEN_CUARTEL = cab.gen_cuartel
+        LEFT JOIN dbo.GEN_FUNDO gf ON gf.Gen_Fundo = gcu.GEN_FUNDO
+        LEFT JOIN dbo.GEN_CAMPO gcpo ON gcpo.Gen_Campo = gcu.GEN_CAMPO
+        LEFT JOIN dbo.GEN_VARIEDAD gv ON gv.gen_variedad = gcu.GEN_VARIEDAD
         ORDER BY pagina.fecha_monitoreo DESC, pagina.id_monitoreo DESC
         OPTION (RECOMPILE)
       `);
@@ -526,33 +530,39 @@ class ChanchitosRepository {
 
   async obtenerResumenHistorialChanchitos(filtros) {
     const pool = await this.poolPromise;
-    const filtrosSinDeteccion = { ...filtros, deteccion: '' };
-    const condicionDeteccion = filtros.deteccion === 'CON_DETECCION'
-      ? 'WHERE ISNULL(detalles.tiene_deteccion, 0) = 1'
-      : filtros.deteccion === 'SIN_DETECCION'
-        ? 'WHERE ISNULL(detalles.tiene_deteccion, 0) = 0'
-        : '';
     const result = await this.crearRequestHistorial(pool, filtros).query(`
-      ;WITH BaseFiltrada AS (
-        SELECT cab.id_monitoreo, ISNULL(cab.cant_plantas, 0) AS cant_plantas
-        ${this.obtenerBaseFiltradaHistorialChanchitos(filtrosSinDeteccion)}
-      ), DetallesAgregados AS (
-        SELECT
-          det.id_monitoreo,
-          SUM(ISNULL(det.cantidad_bichos, 0)) AS total_bichos,
-          MAX(CASE WHEN ISNULL(det.cantidad_bichos, 0) > 0 THEN 1 ELSE 0 END) AS tiene_deteccion
-        FROM dbo.MONI_DETALLEMONITOREO det
-        GROUP BY det.id_monitoreo
-      )
+      SET NOCOUNT ON;
+      CREATE TABLE #BaseFiltradaResumen (
+        id_monitoreo INT NOT NULL PRIMARY KEY,
+        cant_plantas INT NOT NULL
+      );
+      CREATE TABLE #DetallesAgregadosResumen (
+        id_monitoreo INT NOT NULL PRIMARY KEY,
+        total_bichos INT NOT NULL,
+        tiene_deteccion BIT NOT NULL
+      );
+
+      INSERT INTO #BaseFiltradaResumen (id_monitoreo, cant_plantas)
+      SELECT DISTINCT cab.id_monitoreo, ISNULL(cab.cant_plantas, 0)
+      ${this.obtenerBaseFiltradaHistorialChanchitos(filtros)}
+      OPTION (RECOMPILE);
+
+      INSERT INTO #DetallesAgregadosResumen (id_monitoreo, total_bichos, tiene_deteccion)
+      SELECT
+        det.id_monitoreo,
+        SUM(ISNULL(det.cantidad_bichos, 0)),
+        MAX(CASE WHEN det.cantidad_bichos > 0 THEN 1 ELSE 0 END)
+      FROM dbo.MONI_DETALLEMONITOREO det
+      INNER JOIN #BaseFiltradaResumen base ON base.id_monitoreo = det.id_monitoreo
+      GROUP BY det.id_monitoreo;
+
       SELECT
         COUNT(1) AS total_registros,
         ISNULL(SUM(base.cant_plantas), 0) AS total_plantas,
         ISNULL(SUM(ISNULL(detalles.total_bichos, 0)), 0) AS total_bichos,
         ISNULL(SUM(CASE WHEN ISNULL(detalles.total_bichos, 0) > 0 THEN 1 ELSE 0 END), 0) AS monitoreos_con_deteccion
-      FROM BaseFiltrada base
-      LEFT JOIN DetallesAgregados detalles ON detalles.id_monitoreo = base.id_monitoreo
-      ${condicionDeteccion}
-      OPTION (RECOMPILE)
+      FROM #BaseFiltradaResumen base
+      LEFT JOIN #DetallesAgregadosResumen detalles ON detalles.id_monitoreo = base.id_monitoreo
     `);
 
     return result.recordset[0] || {};
@@ -560,7 +570,7 @@ class ChanchitosRepository {
 
   async obtenerDetalleChanchitos(idMonitoreo) {
     const pool = await this.poolPromise;
-    const cabeceraResult = await pool.request()
+    const result = await pool.request()
       .input('idMonitoreo', this.sql.Int, idMonitoreo)
       .query(`
         SELECT
@@ -581,6 +591,8 @@ class ChanchitosRepository {
           ISNULL(cab.cant_plantas, 0) AS cant_plantas,
           cab.id_estadofenologico,
           cab.id_monitoreador,
+          LTRIM(RTRIM(mon.nombre_monitoreador)) AS nombre_monitoreador,
+          LTRIM(RTRIM(ef.nom_estadofenologico)) AS nombre_estado_fenologico,
           cab.observaciones,
           LTRIM(RTRIM(ISNULL(cab.nombre_estacion_meteo, ''))) AS nombre_estacion_meteo,
           cab.horas_frio_acumuladas,
@@ -628,24 +640,23 @@ class ChanchitosRepository {
           ) coincidencia
         ) trazabilidadHistorica
         ${this.obtenerJoinsPresentacionHistorialChanchitos()}
-        WHERE cab.id_monitoreo = @idMonitoreo
-      `);
-    const cabecera = cabeceraResult.recordset[0];
+        LEFT JOIN dbo.MONI_MONITOREADORES mon ON mon.id_monitoreador = cab.id_monitoreador
+        LEFT JOIN dbo.estado_fenologico ef ON ef.id_estadofenologico = cab.id_estadofenologico
+        WHERE cab.id_monitoreo = @idMonitoreo;
 
-    if (!cabecera) {
-      return null;
-    }
-
-    const detallesResult = await pool.request()
-      .input('idMonitoreo', this.sql.Int, idMonitoreo)
-      .query(`
         SELECT id_estadomonitoreo, id_estadoposicion, ISNULL(cantidad_bichos, 0) AS cantidad_bichos
         FROM dbo.MONI_DETALLEMONITOREO
         WHERE id_monitoreo = @idMonitoreo
         ORDER BY id_estadomonitoreo ASC, id_estadoposicion ASC
       `);
+    const recordsets = result.recordsets || [];
+    const cabecera = recordsets[0]?.[0] || result.recordset?.[0];
 
-    return { cabecera, detalles: detallesResult.recordset || [] };
+    if (!cabecera) {
+      return null;
+    }
+
+    return { cabecera, detalles: recordsets[1] || [] };
   }
 
   crearRequestHistorial(pool, filtros) {
@@ -727,23 +738,21 @@ class ChanchitosRepository {
 
     if (filtros.fechaDesde) condiciones.push('cab.fecha_monitoreo >= @fechaDesde');
     if (filtros.fechaHasta) condiciones.push('cab.fecha_monitoreo <= @fechaHasta');
-    if (filtros.deteccion) {
-      joins.push(`
-        LEFT JOIN (
-          SELECT
-            detFiltro.id_monitoreo,
-            MAX(CASE WHEN ISNULL(detFiltro.cantidad_bichos, 0) > 0 THEN 1 ELSE 0 END) AS tiene_deteccion
-          FROM dbo.MONI_DETALLEMONITOREO detFiltro
-          GROUP BY detFiltro.id_monitoreo
-        ) deteccionFiltro ON deteccionFiltro.id_monitoreo = cab.id_monitoreo
-      `);
-    }
-
     if (filtros.deteccion === 'CON_DETECCION') {
-      condiciones.push('ISNULL(deteccionFiltro.tiene_deteccion, 0) = 1');
+      condiciones.push(`EXISTS (
+        SELECT 1
+        FROM dbo.MONI_DETALLEMONITOREO detFiltro
+        WHERE detFiltro.id_monitoreo = cab.id_monitoreo
+          AND detFiltro.cantidad_bichos > 0
+      )`);
     }
     if (filtros.deteccion === 'SIN_DETECCION') {
-      condiciones.push('ISNULL(deteccionFiltro.tiene_deteccion, 0) = 0');
+      condiciones.push(`NOT EXISTS (
+        SELECT 1
+        FROM dbo.MONI_DETALLEMONITOREO detFiltro
+        WHERE detFiltro.id_monitoreo = cab.id_monitoreo
+          AND detFiltro.cantidad_bichos > 0
+      )`);
     }
 
     return `
@@ -756,10 +765,10 @@ class ChanchitosRepository {
   obtenerJoinsPresentacionHistorialChanchitos() {
     return `
       LEFT JOIN dbo.MONIPLA_CATALOGO_SDP_MB mb ON mb.id_catalogo_sdp = cab.id_catalogo_sdp
-      OUTER APPLY (SELECT CAST(NULL AS nvarchar(100)) AS CODIGO, CAST(NULL AS int) AS GEN_FUNDO, CAST(NULL AS int) AS GEN_CAMPO, CAST(NULL AS int) AS GEN_VARIEDAD) gc
-      OUTER APPLY (SELECT CAST(NULL AS nvarchar(100)) AS Nombre) f
-      OUTER APPLY (SELECT CAST(NULL AS nvarchar(100)) AS Nombre) c
-      OUTER APPLY (SELECT CAST(NULL AS nvarchar(100)) AS Nombre) v
+      LEFT JOIN dbo.GEN_CUARTEL gc ON gc.GEN_CUARTEL = cab.gen_cuartel
+      LEFT JOIN dbo.GEN_FUNDO f ON f.Gen_Fundo = COALESCE(gc.GEN_FUNDO, cab.gen_fundo)
+      LEFT JOIN dbo.GEN_CAMPO c ON c.Gen_Campo = COALESCE(gc.GEN_CAMPO, cab.gen_campo)
+      LEFT JOIN dbo.GEN_VARIEDAD v ON v.gen_variedad = COALESCE(gc.GEN_VARIEDAD, cab.gen_variedad)
       OUTER APPLY (SELECT CAST(NULL AS nvarchar(100)) AS sdp, CAST(NULL AS nvarchar(100)) AS csg, CAST(NULL AS nvarchar(100)) AS trazabilidad) rel
     `;
   }
