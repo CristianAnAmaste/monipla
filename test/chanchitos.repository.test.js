@@ -113,6 +113,40 @@ function crearRepository({ fallaCabecera = false, fallaDetalle = 0, filasReporte
   };
 }
 
+function crearRepositoryEliminacion({ existe = true, imagenes = 0, cabecerasEliminadas = 1, fallaDetalles = false } = {}) {
+  const state = { consultas: [], transacciones: [] };
+
+  class Transaction {
+    constructor(pool) { this.pool = pool; this.beginCount = 0; this.commitCount = 0; this.rollbackCount = 0; state.transacciones.push(this); }
+    async begin() { this.beginCount += 1; }
+    async commit() { this.commitCount += 1; }
+    async rollback() { this.rollbackCount += 1; }
+  }
+
+  class Request {
+    constructor(transaction) { this.transaction = transaction; this.inputs = []; }
+    input(nombre, tipo, valor) { this.inputs.push({ nombre, tipo, valor }); return this; }
+    async query(texto) {
+      state.consultas.push({ texto, transaction: this.transaction, inputs: this.inputs });
+      if (/WITH \(UPDLOCK, HOLDLOCK\)/.test(texto)) return { recordset: existe ? [{ id_monitoreo: 440 }] : [], rowsAffected: [0] };
+      if (/FROM dbo\.MONI_IMAGENES/.test(texto)) return { recordset: [{ cantidad_imagenes: imagenes }], rowsAffected: [0] };
+      if (/DELETE FROM dbo\.MONI_DETALLEMONITOREO/.test(texto)) {
+        if (fallaDetalles) throw new Error('FALLA_DETALLES');
+        return { recordset: [], rowsAffected: [12] };
+      }
+      if (/DELETE FROM dbo\.MONI_CABECERAMONITOREO/.test(texto)) return { recordset: [], rowsAffected: [cabecerasEliminadas] };
+      throw new Error('CONSULTA_NO_ESPERADA');
+    }
+  }
+
+  const database = {
+    poolPromise: Promise.resolve({ request: () => new Request(null) }),
+    sql: { Int: 'INT', Transaction, Request },
+  };
+
+  return { state, repository: new ChanchitosRepository(database) };
+}
+
 function crearPayload(registro = {}) {
   const revalidaciones = [];
   const {
@@ -400,6 +434,45 @@ test('la trazabilidad historica se resuelve en un resultset set-based y el detal
   assert.match(contenido, /NULLIF\(NULLIF\(NULLIF\(LTRIM\(RTRIM\(CONVERT\(nvarchar\(100\), mb\.codigo_trazabilidad\)\)\), ''\), 'N\/A'\), 'S\/SDP'\)/);
 });
 
+test('el detalle usa un ID parametrizado, entrega nombres puntuales y matriz en un solo batch', () => {
+  const contenido = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'repositories', 'chanchitos.repository.js'),
+    'utf8',
+  ).replace(/\r\n?/g, '\n');
+  const coincidencia = contenido.match(
+    /async obtenerDetalleChanchitos\(idMonitoreo\)\s*\{([\s\S]*?)\n\s*crearRequestHistorial\(pool,\s*filtros\)\s*\{/
+  );
+
+  assert.ok(coincidencia, 'No se pudo localizar obtenerDetalleChanchitos');
+  const bloque = coincidencia[1];
+  assert.match(bloque, /\.input\('idMonitoreo', this\.sql\.Int, idMonitoreo\)/);
+  assert.match(bloque, /LEFT JOIN dbo\.MONI_MONITOREADORES mon ON mon\.id_monitoreador = cab\.id_monitoreador/);
+  assert.match(bloque, /LEFT JOIN dbo\.estado_fenologico ef ON ef\.id_estadofenologico = cab\.id_estadofenologico/);
+  assert.match(bloque, /LTRIM\(RTRIM\(mon\.nombre_monitoreador\)\) AS nombre_monitoreador/);
+  assert.match(bloque, /LTRIM\(RTRIM\(ef\.nom_estadofenologico\)\) AS nombre_estado_fenologico/);
+  assert.match(bloque, /SELECT id_estadomonitoreo, id_estadoposicion/);
+  assert.equal((bloque.match(/pool\.request\(\)/g) || []).length, 1);
+});
+
+test('el helper del detalle prioriza catalogo directo y resuelve historicos desde GEN sin inventar nombres', () => {
+  const contenido = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'repositories', 'chanchitos.repository.js'),
+    'utf8',
+  ).replace(/\r\n?/g, '\n');
+  const coincidencia = contenido.match(
+    /obtenerJoinsPresentacionHistorialChanchitos\(\)\s*\{([\s\S]*?)\n\s*async insertarCabecera/
+  );
+
+  assert.ok(coincidencia, 'No se pudo localizar el helper de presentacion');
+  const helper = coincidencia[1];
+  assert.match(helper, /LEFT JOIN dbo\.MONIPLA_CATALOGO_SDP_MB mb ON mb\.id_catalogo_sdp = cab\.id_catalogo_sdp/);
+  assert.match(helper, /LEFT JOIN dbo\.GEN_CUARTEL gc ON gc\.GEN_CUARTEL = cab\.gen_cuartel/);
+  assert.match(helper, /LEFT JOIN dbo\.GEN_FUNDO f ON f\.Gen_Fundo = COALESCE\(gc\.GEN_FUNDO, cab\.gen_fundo\)/);
+  assert.match(helper, /LEFT JOIN dbo\.GEN_CAMPO c ON c\.Gen_Campo = COALESCE\(gc\.GEN_CAMPO, cab\.gen_campo\)/);
+  assert.match(helper, /LEFT JOIN dbo\.GEN_VARIEDAD v ON v\.gen_variedad = COALESCE\(gc\.GEN_VARIEDAD, cab\.gen_variedad\)/);
+  assert.doesNotMatch(helper, /CONCAT\('Fundo '/);
+});
+
 test('el formulario usa el ID como valor y el nombre como etiqueta del monitoreador', () => {
   const vista = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'views', 'chanchitos', 'nuevo.ejs'),
@@ -431,4 +504,37 @@ test('hace rollback si falla cualquier detalle', async () => {
   assert.equal(state.transacciones[0].rollbackCount, 1);
   assert.equal(state.consultas.filter((item) => /MONI_CABECERAMONITOREO/.test(item.texto)).length, 1);
   assert.equal(state.consultas.filter((item) => /MONI_DETALLEMONITOREO/.test(item.texto)).length, 5);
+});
+
+test('elimina Chanchitos en transaccion: bloquea, elimina detalles y luego cabecera', async () => {
+  const { repository, state } = crearRepositoryEliminacion();
+  const resultado = await repository.eliminarMonitoreoTransaccional(440);
+  const textos = state.consultas.map((consulta) => consulta.texto);
+  const indiceDetalles = textos.findIndex((texto) => /DELETE FROM dbo\.MONI_DETALLEMONITOREO/.test(texto));
+  const indiceCabecera = textos.findIndex((texto) => /DELETE FROM dbo\.MONI_CABECERAMONITOREO/.test(texto));
+
+  assert.deepEqual(resultado, { idMonitoreo: 440, detallesEliminados: 12 });
+  assert.match(textos[0], /WITH \(UPDLOCK, HOLDLOCK\)/);
+  assert.ok(indiceDetalles < indiceCabecera);
+  assert.equal(state.transacciones[0].beginCount, 1);
+  assert.equal(state.transacciones[0].commitCount, 1);
+  assert.equal(state.transacciones[0].rollbackCount, 0);
+  state.consultas.forEach((consulta) => assert.deepEqual(consulta.inputs, [{ nombre: 'idMonitoreo', tipo: 'INT', valor: 440 }]));
+});
+
+test('la eliminacion hace rollback si no existe, hay imagenes, falla detalle o la cabecera no queda en una fila', async () => {
+  const escenarios = [
+    [{ existe: false }, 'CHANCHITO_NO_EXISTE'],
+    [{ imagenes: 1 }, 'CHANCHITO_CON_IMAGENES'],
+    [{ fallaDetalles: true }, 'FALLA_DETALLES'],
+    [{ cabecerasEliminadas: 0 }, 'ELIMINACION_CHANCHITO_INCONSISTENTE'],
+    [{ cabecerasEliminadas: 2 }, 'ELIMINACION_CHANCHITO_INCONSISTENTE'],
+  ];
+
+  for (const [opciones, errorEsperado] of escenarios) {
+    const { repository, state } = crearRepositoryEliminacion(opciones);
+    await assert.rejects(repository.eliminarMonitoreoTransaccional(440), new RegExp(errorEsperado));
+    assert.equal(state.transacciones[0].commitCount, 0);
+    assert.equal(state.transacciones[0].rollbackCount, 1);
+  }
 });

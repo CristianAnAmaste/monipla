@@ -1,0 +1,56 @@
+<section class="chanchitos-detail-grid">
+  <article class="info-panel">
+    <h2>Identificación</h2>
+    <dl class="chanchitos-detail-list">
+      <dt>Fundo</dt><dd><%= detalle.fundo %></dd>
+      <dt>Productor / Campo</dt><dd><%= detalle.campo %></dd>
+      <dt>Variedad</dt><dd><%= detalle.variedad %></dd>
+      <dt>Cuartel</dt><dd><%= detalle.cuartel %></dd>
+      <dt>SDP</dt><dd><%= detalle.sdp %></dd>
+      <dt>CSG</dt><dd><%= detalle.csg %></dd>
+      <dt>Trazabilidad</dt><dd><%= detalle.trazabilidad %></dd>
+    </dl>
+  </article>
+  <article class="info-panel">
+    <h2>Monitoreo</h2>
+    <dl class="chanchitos-detail-list">
+      <dt>Plantas</dt><dd><%= detalle.cantPlantas %></dd>
+      <dt>Estado fenológico</dt><dd><%= detalle.estadoFenologico %></dd>
+      <dt>Monitoreador</dt><dd><%= detalle.monitoreador %></dd>
+      <dt>Fecha de registro</dt><dd><%= detalle.fechaRegistro %></dd>
+      <dt>Total bichos</dt><dd><strong><%= detalle.totalBichos %></strong></dd>
+      <dt>Posiciones con detección</dt><dd><%= detalle.posicionesConDeteccion %></dd>
+    </dl>
+  </article>
+  <article class="info-panel">
+    <h2>Agroclima</h2>
+    <dl class="chanchitos-detail-list">
+      <dt>Estación</dt><dd><%= detalle.agroclima.estacion %></dd>
+      <dt>Horas frío</dt><dd><%= detalle.agroclima.horasFrio === null ? 'Sin datos' : detalle.agroclima.horasFrio %></dd>
+      <dt>Días grado</dt><dd><%= detalle.agroclima.diasGrado === null ? 'Sin datos' : detalle.agroclima.diasGrado %></dd>
+      <dt>Fecha de corte</dt><dd><%= detalle.agroclima.fechaCorte %></dd>
+    </dl>
+  </article>
+</section>
+<section class="info-panel">
+  <h2>Observaciones</h2>
+  <p><%= detalle.observaciones %></p>
+</section>
+<section class="data-panel chanchitos-detail-matrix">
+  <h2>Matriz de monitoreo</h2>
+  <div class="table-wrap">
+    <table class="data-table">
+      <thead><tr><th>Estado</th><th>Base corteza</th><th>Base brote</th><th>Hoja</th><th>Racimo</th><th>Total</th></tr></thead>
+      <tbody>
+        <% detalle.matriz.forEach((fila) => { const totalFila = fila.posiciones.reduce((total, posicion) => total + posicion.cantidad, 0); %>
+          <tr>
+            <th scope="row"><%= fila.nombre %></th>
+            <% fila.posiciones.forEach((posicion) => { %><td data-label="Posición"><%= posicion.cantidad %></td><% }) %>
+            <td><strong><%= totalFila %></strong></td>
+          </tr>
+        <% }) %>
+      </tbody>
+      <tfoot><tr><th colspan="5">Total general</th><th><%= detalle.totalBichos %></th></tr></tfoot>
+    </table>
+  </div>
+</section>

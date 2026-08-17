@@ -35,14 +35,13 @@ function crearRegistro(overrides = {}) {
 function crearServicio() {
   const llamadas = [];
   const repository = {
-    obtenerHistorialConsolidado: async (filtros, pagina, pageSize) => {
-      llamadas.push(['consolidado', filtros, pagina, pageSize]);
-      return {
-        resumen: { total_registros: 26, total_plantas: 520, total_bichos: 91, monitoreos_con_deteccion: 12 },
-        totalRegistros: 26,
-        cabeceras: [crearRegistro({ id_catalogo_sdp: null, gen_cuartel: null })],
-        detalles: [{ id_monitoreo: 440, id_estadomonitoreo: 1, id_estadoposicion: 1, cantidad_bichos: 7 }],
-      };
+    obtenerResumenHistorialChanchitos: async (filtros) => {
+      llamadas.push(['resumen', filtros]);
+      return { total_registros: 26, total_plantas: 520, total_bichos: 91, monitoreos_con_deteccion: 12 };
+    },
+    listarHistorialChanchitos: async (filtros, pagina, pageSize) => {
+      llamadas.push(['pagina', filtros, pagina, pageSize]);
+      return [crearRegistro({ id_catalogo_sdp: null, gen_cuartel: null })];
     },
     obtenerDetalleChanchitos: async () => ({
       cabecera: crearRegistro(),
@@ -57,7 +56,7 @@ function crearServicio() {
   return { servicio, llamadas, repository };
 }
 
-test('normaliza filtros, conserva paginacion y presenta historicos sin id_catalogo_sdp', async () => {
+test('normaliza filtros, pagina solo despues de conocer el total y presenta historicos sin id_catalogo_sdp', async () => {
   const { servicio, llamadas } = crearServicio();
   const resultado = await servicio.obtenerHistorial({
     fechaDesde: '2026-08-01', fechaHasta: '2026-08-31', fundo: 'Nantoco',
@@ -72,9 +71,11 @@ test('normaliza filtros, conserva paginacion y presenta historicos sin id_catalo
   assert.equal(resultado.registros[0].totalBichos, 7);
   assert.equal(resultado.registros[0].agroclima.diasGrado, '4.36');
   assert.equal(resultado.resumen.totalBichos, 91);
-  assert.deepEqual(llamadas.map(([nombre]) => nombre), ['consolidado']);
-  assert.equal(llamadas[0][2], 9);
-  assert.equal(llamadas[0][3], 25);
+  assert.deepEqual(llamadas.map(([nombre]) => nombre).sort(), ['pagina', 'resumen']);
+  const llamadaPagina = llamadas.find(([nombre]) => nombre === 'pagina');
+  assert.equal(llamadaPagina[2], 2);
+  assert.equal(llamadaPagina[3], 25);
+  assert.equal(llamadas.some(([nombre]) => nombre === 'consolidado'), false);
 });
 
 test('valida rangos de fecha sin consultar el repositorio', async () => {
@@ -88,6 +89,9 @@ test('valida rangos de fecha sin consultar el repositorio', async () => {
 
 test('el detalle completa las 12 combinaciones y conserva el total', async () => {
   const { servicio } = crearServicio();
+  servicio.obtenerOpcionesHistorial = async () => {
+    throw new Error('NO_DEBE_CARGAR_OPCIONES');
+  };
   const detalle = await servicio.obtenerDetalle('440');
 
   assert.equal(detalle.matriz.length, 3);
@@ -115,22 +119,82 @@ test('el detalle conserva la trazabilidad historica resuelta por el repository',
   assert.equal(detalle.trazabilidad, '0305');
 });
 
+test('el detalle historico conserva los nombres GEN que presenta el historial y el PDF', async () => {
+  const { servicio, repository } = crearServicio();
+  repository.obtenerDetalleChanchitos = async () => ({
+    cabecera: crearRegistro({
+      id_monitoreo: 442,
+      id_catalogo_sdp: null,
+      nombre_fundo: 'LAS PINTADAS I',
+      nombre_campo: 'EL CHILE',
+      nombre_variedad: 'PRIME',
+      codigo_cuartel: '3',
+      sdp: '60106',
+      csg: '87703',
+      trazabilidad: '0305',
+    }),
+    detalles: [{ id_estadomonitoreo: 1, id_estadoposicion: 1, cantidad_bichos: 3 }],
+  });
+
+  const detalle = await servicio.obtenerDetalle('442');
+
+  assert.equal(detalle.fundo, 'LAS PINTADAS I');
+  assert.equal(detalle.campo, 'EL CHILE');
+  assert.equal(detalle.variedad, 'PRIME');
+  assert.equal(detalle.cuartel, '3');
+  assert.equal(detalle.sdp, '60106');
+  assert.equal(detalle.csg, '87703');
+  assert.equal(detalle.trazabilidad, '0305');
+  assert.equal(detalle.matriz.flatMap((fila) => fila.posiciones).length, 12);
+  assert.equal(detalle.agroclima.diasGrado, '4.36');
+});
+
+test('el detalle sin catalogo ni nombres GEN no inventa identificacion agricola', async () => {
+  const { servicio, repository } = crearServicio();
+  repository.obtenerDetalleChanchitos = async () => ({
+    cabecera: crearRegistro({
+      id_catalogo_sdp: null,
+      nombre_fundo: null,
+      nombre_campo: null,
+      nombre_variedad: null,
+      trazabilidad: null,
+    }),
+    detalles: [],
+  });
+
+  const detalle = await servicio.obtenerDetalle('440');
+
+  assert.equal(detalle.fundo, '-');
+  assert.equal(detalle.campo, '-');
+  assert.equal(detalle.variedad, '-');
+  assert.equal(detalle.trazabilidad, '-');
+});
+
 test('la paginacion se aplica a cabeceras y los detalles se agregan despues por IDs parametrizados', () => {
   const contenido = fs.readFileSync(path.join(__dirname, '..', 'src', 'repositories', 'chanchitos.repository.js'), 'utf8');
+  const bloqueListado = contenido.slice(
+    contenido.indexOf('  async listarHistorialChanchitos('),
+    contenido.indexOf('  async contarHistorialChanchitos(')
+  );
 
-  assert.match(contenido, /FROM dbo\.MONI_CABECERAMONITOREO cab/);
-  assert.match(contenido, /FROM dbo\.MONI_DETALLEMONITOREO det/);
-  assert.match(contenido, /BaseFiltrada AS \(/);
-  assert.match(contenido, /Pagina AS \(/);
-  assert.match(contenido, /OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY/);
-  assert.match(contenido, /async obtenerDetallesAgregadosPorMonitoreos/);
+  assert.match(bloqueListado, /INNER JOIN dbo\.MONI_CABECERAMONITOREO cab ON cab\.id_monitoreo = pagina\.id_monitoreo/);
+  assert.match(bloqueListado, /BaseFiltrada AS \(/);
+  assert.match(bloqueListado, /Pagina AS \(/);
+  assert.match(bloqueListado, /OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY/);
+  assert.match(bloqueListado, /this\.obtenerDetallesAgregadosPorMonitoreos/);
+  assert.ok(
+    bloqueListado.indexOf('OFFSET @offset ROWS FETCH NEXT @pageSize ROWS ONLY')
+      < bloqueListado.indexOf('this.obtenerDetallesAgregadosPorMonitoreos'),
+    'La pagina debe resolverse antes de agregar detalles'
+  );
+  assert.doesNotMatch(bloqueListado, /id_estadomonitoreo|id_estadoposicion/);
   assert.match(contenido, /WHERE id_monitoreo IN \(\$\{placeholders\.join\(', '\)\}\)/);
   assert.match(contenido, /SUM\(ISNULL\(cantidad_bichos, 0\)\) AS total_bichos/);
   assert.match(contenido, /\.input\('genFundo', this\.sql\.Int, filtros\.genFundo \|\| null\)/);
   assert.match(contenido, /\.input\('idCatalogoSdp', this\.sql\.Int, filtros\.idCatalogoSdp \|\| null\)/);
 });
 
-test('conteo, resumen y filtros de fecha reutilizan la misma base sin conversiones en WHERE', () => {
+test('conteo, resumen y filtros de fecha reutilizan la misma base y deteccion correlacionada', () => {
   const contenido = fs.readFileSync(path.join(__dirname, '..', 'src', 'repositories', 'chanchitos.repository.js'), 'utf8');
   const inicio = contenido.indexOf('  obtenerBaseFiltradaHistorialChanchitos(filtros) {');
   const fin = contenido.indexOf('obtenerJoinsPresentacionHistorialChanchitos', inicio);
@@ -140,9 +204,11 @@ test('conteo, resumen y filtros de fecha reutilizan la misma base sin conversion
   assert.match(base, /cab\.fecha_monitoreo <= @fechaHasta/);
   assert.doesNotMatch(base, /CONVERT\([^\n]*fecha_monitoreo/);
   assert.match(contenido, /OPTION \(RECOMPILE\)/);
-  assert.match(base, /MAX\(CASE WHEN ISNULL\(detFiltro\.cantidad_bichos, 0\) > 0 THEN 1 ELSE 0 END\) AS tiene_deteccion/);
-  assert.match(base, /GROUP BY detFiltro\.id_monitoreo/);
-  assert.doesNotMatch(base, /EXISTS \(SELECT 1 FROM dbo\.MONI_DETALLEMONITOREO/);
+  assert.match(base, /EXISTS \([\s\S]*?FROM dbo\.MONI_DETALLEMONITOREO detFiltro/);
+  assert.match(base, /NOT EXISTS \([\s\S]*?FROM dbo\.MONI_DETALLEMONITOREO detFiltro/);
+  assert.doesNotMatch(base, /GROUP BY detFiltro\.id_monitoreo/);
+  assert.match(contenido, /CREATE TABLE #BaseFiltradaResumen/);
+  assert.match(contenido, /INNER JOIN #BaseFiltradaResumen base ON base\.id_monitoreo = det\.id_monitoreo/);
 });
 
 test('el historial usa selects con IDs y carga la jerarquia agricola con los endpoints existentes', () => {
@@ -183,12 +249,53 @@ test('la URL de PDF usa valores actuales del formulario y excluye paginacion', (
   assert.doesNotMatch(url, /pageSize|pagina/);
 });
 
+test('el historial usa filas de detalle diferido y el frontend conserva una sola carga por monitoreo', () => {
+  const vista = fs.readFileSync(path.join(__dirname, '..', 'src', 'views', 'chanchitos', 'historial.ejs'), 'utf8');
+  const script = fs.readFileSync(path.join(__dirname, '..', 'src', 'public', 'js', 'chanchitos-historial.js'), 'utf8');
+  const { construirUrlDetalleParcialChanchitos } = require('../src/public/js/chanchitos-historial');
+
+  assert.match(vista, /type="button" data-action="toggle-detalle" data-id-monitoreo="<%= registro\.idMonitoreo %>" aria-expanded="false"/);
+  assert.match(vista, /<tr class="historial-detail-row" data-detail-row="<%= registro\.idMonitoreo %>" hidden>/);
+  assert.match(vista, /<td colspan="9"><div class="historial-detail-container" data-detail-container="<%= registro\.idMonitoreo %>"><\/div><\/td>/);
+  assert.doesNotMatch(vista, /href="\/chanchitos\/<%= registro\.idMonitoreo %>"/);
+  assert.equal(construirUrlDetalleParcialChanchitos('440'), '/chanchitos/440/detalle-parcial');
+  assert.equal(construirUrlDetalleParcialChanchitos('440x'), null);
+  assert.match(script, /const detallesCargados = new Set\(\)/);
+  assert.match(script, /if \(detallesCargados\.has\(idMonitoreo\)\) return/);
+  assert.match(script, /cerrarDetalleActual\(\);/);
+  assert.match(script, /button\.textContent = 'Ocultar detalle';/);
+  assert.match(script, /actual\.button\.setAttribute\('aria-expanded', 'false'\)/);
+});
+
+test('el historial limita la eliminacion a admin y conserva modal, filtros y detalle desplegable', () => {
+  const vista = fs.readFileSync(path.join(__dirname, '..', 'src', 'views', 'chanchitos', 'historial.ejs'), 'utf8');
+  const script = fs.readFileSync(path.join(__dirname, '..', 'src', 'public', 'js', 'chanchitos-historial.js'), 'utf8');
+  const { construirUrlEliminarChanchitos } = require('../src/public/js/chanchitos-historial');
+
+  assert.match(vista, /<% if \(puedeEliminar\) \{ %>/);
+  assert.match(vista, /data-action="confirmar-eliminacion"/);
+  ['data-id-monitoreo', 'data-fecha-monitoreo', 'data-fundo', 'data-campo', 'data-variedad', 'data-cuartel', 'data-sdp', 'data-cant-plantas', 'data-total-bichos', 'data-monitoreador'].forEach((atributo) => assert.match(vista, new RegExp(atributo)));
+  assert.match(vista, /id="chanchitos-eliminar-modal"/);
+  assert.match(vista, /<form id="chanchitos-eliminar-form" method="POST">/);
+  assert.match(vista, /Eliminar monitoreo/);
+  assert.match(vista, /Esta acción es irreversible\./);
+  ['fechaDesde', 'fechaHasta', 'genFundo', 'genCampo', 'genVariedad', 'idCatalogoSdp', 'idMonitoreador', 'idEstadoFenologico', 'deteccion', 'pagina', 'pageSize'].forEach((filtro) => assert.match(vista, new RegExp(`'${filtro}'`)));
+  assert.equal(construirUrlEliminarChanchitos('440'), '/chanchitos/440/eliminar');
+  assert.equal(construirUrlEliminarChanchitos('440x'), null);
+  assert.match(script, /confirmarEliminacion\.disabled = true/);
+  assert.match(script, /cerrarDetalleActual\(\);/);
+  assert.match(script, /data-close-chanchitos-delete-modal/);
+});
+
 test('las rutas de historial y detalle exigen autenticacion y el detalle inexistente responde 404', async () => {
   const rutas = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'chanchitos.routes.js'), 'utf8');
   assert.match(rutas, /router\.get\('\/chanchitos\/historial', ensureAuthenticated, chanchitosController\.mostrarHistorial\)/);
+  assert.match(rutas, /router\.post\('\/chanchitos\/:id\/eliminar', ensureAuthenticated, ensureAdmin, chanchitosController\.eliminar\)/);
+  assert.match(rutas, /router\.get\('\/chanchitos\/:id\/detalle-parcial', ensureAuthenticated, chanchitosController\.mostrarDetalleParcial\)/);
   assert.match(rutas, /router\.get\('\/chanchitos\/:id', ensureAuthenticated, chanchitosController\.mostrarDetalle\)/);
   assert.ok(rutas.indexOf("'/chanchitos/historial'") < rutas.indexOf("'/chanchitos/:id'"));
   assert.ok(rutas.indexOf("'/chanchitos/pdf/general'") < rutas.indexOf("'/chanchitos/:id'"));
+  assert.ok(rutas.indexOf("'/chanchitos/:id/detalle-parcial'") < rutas.indexOf("'/chanchitos/:id'"));
 
   const controller = new ChanchitosController({
     obtenerDetalle: async () => { throw new Error('CHANCHITO_NO_EXISTE'); },
