@@ -14,6 +14,7 @@ class ChanchitosController {
     this.eliminar = this.eliminar.bind(this);
     this.mostrarDetalleParcial = this.mostrarDetalleParcial.bind(this);
     this.mostrarDetalle = this.mostrarDetalle.bind(this);
+    this.verImagen = this.verImagen.bind(this);
     this.descargarPdfGeneral = this.descargarPdfGeneral.bind(this);
   }
 
@@ -50,7 +51,11 @@ class ChanchitosController {
     try {
       const result = await this.chanchitosService.guardarMonitoreo(
         req.body,
-        req.session.usuario
+        req.session.usuario,
+        {
+          files: req.files,
+          uploadError: req.uploadImagenesError,
+        }
       );
 
       if (result.success) {
@@ -227,6 +232,31 @@ class ChanchitosController {
           ? 'El monitoreo de Chanchito Blanco solicitado no existe.'
           : 'No fue posible cargar el detalle del monitoreo.',
       });
+    }
+  }
+
+  async verImagen(req, res) {
+    try {
+      const imagen = await this.chanchitosService.obtenerImagen(
+        req.params.idMonitoreo,
+        req.params.posicion
+      );
+
+      res.setHeader('Content-Type', imagen.mime);
+      res.setHeader('Content-Length', imagen.buffer.length);
+      res.setHeader('Content-Disposition', 'inline');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'private, max-age=3600');
+
+      return res.send(imagen.buffer);
+    } catch (error) {
+      const status = error.message === 'IMAGEN_CHANCHITO_NO_DISPONIBLE' ? 404 : 500;
+      console.error('[MONIPLA][CHANCHITOS][IMAGEN][ERROR]', {
+        idMonitoreo: req.params.idMonitoreo,
+        posicion: req.params.posicion,
+        error: error.message,
+      });
+      return res.status(status).send('Imagen no disponible.');
     }
   }
 

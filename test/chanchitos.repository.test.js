@@ -100,6 +100,8 @@ function crearRepository({ fallaCabecera = false, fallaDetalle = 0, filasReporte
       Decimal: (precision, scale) => `DECIMAL(${precision},${scale})`,
       UniqueIdentifier: 'UNIQUEIDENTIFIER',
       TinyInt: 'TINYINT',
+      MAX: 'MAX',
+      VarBinary: (length) => `VARBINARY(${length})`,
       VarChar: (length) => `VARCHAR(${length})`,
       NVarChar: () => 'NVARCHAR',
       Transaction,
@@ -504,6 +506,54 @@ test('hace rollback si falla cualquier detalle', async () => {
   assert.equal(state.transacciones[0].rollbackCount, 1);
   assert.equal(state.consultas.filter((item) => /MONI_CABECERAMONITOREO/.test(item.texto)).length, 1);
   assert.equal(state.consultas.filter((item) => /MONI_DETALLEMONITOREO/.test(item.texto)).length, 5);
+});
+
+test('inserta las tres imagenes optimizadas en las columnas de cabecera y usa NULL cuando faltan', async () => {
+  const { repository, state } = crearRepository();
+  const imagen1 = Buffer.from('jpeg-1');
+  const imagen2 = Buffer.from('jpeg-2');
+  const imagen3 = Buffer.from('jpeg-3');
+  const { payload } = crearPayload({ cabecera: { imagenes: [imagen1, imagen2, imagen3] } });
+
+  await repository.crearMonitoreoTransaccional(payload);
+
+  const consulta = state.consultas.find((item) => /INSERT INTO dbo\.MONI_CABECERAMONITOREO/.test(item.texto));
+  const inputs = new Map(consulta.inputs.map((input) => [input.nombre, input]));
+  assert.equal(inputs.get('imagen1').tipo, 'VARBINARY(MAX)');
+  assert.equal(inputs.get('imagen1').valor, imagen1);
+  assert.equal(inputs.get('imagen2').valor, imagen2);
+  assert.equal(inputs.get('imagen3').valor, imagen3);
+  assert.match(consulta.texto, /imagenmonitoreo,[\s\S]*seg_imagenmonitoreo,[\s\S]*terc_imagenmonitoreo/);
+  assert.match(consulta.texto, /@imagen1,[\s\S]*NULL,[\s\S]*@idMonitoreador,[\s\S]*@imagen2,[\s\S]*@imagen3/);
+
+  const sinImagenes = crearRepository();
+  const payloadSinImagenes = crearPayload().payload;
+  await sinImagenes.repository.crearMonitoreoTransaccional(payloadSinImagenes);
+  const consultaSinImagenes = sinImagenes.state.consultas.find((item) => /INSERT INTO dbo\.MONI_CABECERAMONITOREO/.test(item.texto));
+  const inputsSinImagenes = new Map(consultaSinImagenes.inputs.map((input) => [input.nombre, input]));
+  assert.equal(inputsSinImagenes.get('imagen1').valor, null);
+  assert.equal(inputsSinImagenes.get('imagen2').valor, null);
+  assert.equal(inputsSinImagenes.get('imagen3').valor, null);
+});
+
+test('las imagenes de cabecera participan del rollback si falla un detalle', async () => {
+  const { repository, state } = crearRepository({ fallaDetalle: 1 });
+  const { payload } = crearPayload({ cabecera: { imagenes: [Buffer.from('jpeg')] } });
+
+  await assert.rejects(repository.crearMonitoreoTransaccional(payload), /FALLA_DETALLE/);
+  assert.equal(state.transacciones[0].commitCount, 0);
+  assert.equal(state.transacciones[0].rollbackCount, 1);
+});
+
+test('el historial de Chanchitos no selecciona los binarios de imagen', () => {
+  const contenido = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'repositories', 'chanchitos.repository.js'),
+    'utf8'
+  );
+  const bloque = contenido.match(/async listarHistorialChanchitos\([\s\S]*?\n\s*async contarHistorialChanchitos/);
+
+  assert.ok(bloque);
+  assert.doesNotMatch(bloque[0], /imagenmonitoreo|seg_imagenmonitoreo|terc_imagenmonitoreo/);
 });
 
 test('elimina Chanchitos en transaccion: bloquea, elimina detalles y luego cabecera', async () => {

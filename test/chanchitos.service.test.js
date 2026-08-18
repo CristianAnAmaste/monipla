@@ -51,6 +51,7 @@ function crearServicio({
     temporadaAgroclima: '2026',
     agroclimaObservacion: 'Agroclima OK desde Meteo FEAL.',
   },
+  chanchitosImagenService = { procesarImagenes: async () => [] },
 } = {}) {
   const llamadasCatalogo = [];
   const llamadasAgroclima = [];
@@ -79,7 +80,7 @@ function crearServicio({
     llamadasCatalogo,
     llamadasAgroclima,
     repository,
-    servicio: new ChanchitosService(repository, catalogoService, agroclimaService),
+    servicio: new ChanchitosService(repository, catalogoService, agroclimaService, chanchitosImagenService),
   };
 }
 
@@ -141,6 +142,71 @@ test('construye un payload valido con las 12 combinaciones canonicas y snapshot 
   assert.deepEqual(llamadasAgroclima, [[10, '2026-08-06']]);
   assert.equal(payloadRecibido.cabecera.agroclimaSnapshot.horasFrioAcumuladas, 430.15);
   assert.equal(payloadRecibido.cabecera.agroclimaSnapshot.diasGradoAcumulados, 120.45);
+});
+
+test('entrega al repositorio exclusivamente los buffers optimizados de las imagenes', async () => {
+  const optimizado = Buffer.from([0xff, 0xd8, 0xff, 0x00]);
+  const archivos = [{ buffer: Buffer.from('original'), mimetype: 'image/png', size: 8 }];
+  const llamadas = [];
+  const { servicio, repository } = crearServicio({
+    chanchitosImagenService: {
+      procesarImagenes: async (...args) => {
+        llamadas.push(args);
+        return [optimizado];
+      },
+    },
+  });
+  let payloadRecibido;
+  repository.crearMonitoreoTransaccional = async (payload) => {
+    payloadRecibido = payload;
+    return { id_monitoreo: 88 };
+  };
+
+  const result = await servicio.guardarMonitoreo(crearBody(), { id: 12 }, { files: archivos });
+
+  assert.equal(result.success, true);
+  assert.deepEqual(llamadas, [[archivos, undefined]]);
+  assert.deepEqual(payloadRecibido.cabecera.imagenes, [optimizado]);
+  assert.notEqual(payloadRecibido.cabecera.imagenes[0], archivos[0].buffer);
+});
+
+test('rechaza una imagen cuando el optimizador informa un error controlado', async () => {
+  const { servicio, repository } = crearServicio({
+    chanchitosImagenService: {
+      procesarImagenes: async () => {
+        const error = new Error('IMAGEN_CORRUPTA');
+        error.userMessage = 'Imagen 1: no fue posible procesar el archivo seleccionado.';
+        throw error;
+      },
+    },
+  });
+  let persistido = false;
+  repository.crearMonitoreoTransaccional = async () => { persistido = true; };
+
+  const result = await servicio.guardarMonitoreo(crearBody(), { id: 12 }, { files: [{}] });
+
+  assert.equal(result.success, false);
+  assert.match(result.errors[0], /Imagen 1/);
+  assert.equal(persistido, false);
+});
+
+test('obtiene imagenes historicas JPEG, PNG o WebP y rechaza posiciones invalidas', async () => {
+  const repository = {
+    obtenerImagenMonitoreoChanchitos: async (id, posicion) => {
+      assert.equal(id, 88);
+      return {
+        1: Buffer.from([0xff, 0xd8, 0xff]),
+        2: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        3: Buffer.from('RIFF0000WEBP', 'ascii'),
+      }[posicion] || null;
+    },
+  };
+  const servicio = new ChanchitosService(repository, {}, {}, { procesarImagenes: async () => [] });
+
+  assert.equal((await servicio.obtenerImagen('88', '1')).mime, 'image/jpeg');
+  assert.equal((await servicio.obtenerImagen('88', '2')).mime, 'image/png');
+  assert.equal((await servicio.obtenerImagen('88', '3')).mime, 'image/webp');
+  await assert.rejects(servicio.obtenerImagen('88', '4'), /IMAGEN_CHANCHITO_NO_DISPONIBLE/);
 });
 
 test('guarda Chanchitos sin estacion meteorologica con acumulados nulos', async () => {
