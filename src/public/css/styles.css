@@ -1706,6 +1706,216 @@ select:focus {
   margin-top: 20px;
 }
 
+.chanchitos-matrix-panel {
+  padding: 20px;
+}
+
+.chanchitos-matrix-table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+}
+
+.chanchitos-matrix-table th,
+.chanchitos-matrix-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+  vertical-align: middle;
+}
+
+.chanchitos-matrix-table th {
+  text-transform: none;
+}
+
+.chanchitos-matrix-table th:first-child {
+  min-width: 150px;
+  text-align: left;
+}
+
+.chanchitos-matrix-table input[type="number"] {
+  width: 100%;
+  min-width: 88px;
+  text-align: center;
+}
+
+.chanchitos-evidence-gallery {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 220px));
+  gap: 12px;
+  justify-content: start;
+}
+
+.chanchitos-evidence-trigger {
+  display: block;
+  overflow: hidden;
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 4px 12px rgba(24, 33, 42, 0.08);
+  cursor: zoom-in;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.chanchitos-evidence-trigger:hover {
+  border-color: rgba(36, 116, 90, 0.5);
+  box-shadow: 0 8px 18px rgba(24, 33, 42, 0.12);
+  transform: translateY(-1px);
+}
+
+.chanchitos-evidence-trigger:focus-visible,
+.chanchitos-evidence-modal .modal-close:focus-visible {
+  outline: 3px solid rgba(36, 116, 90, 0.5);
+  outline-offset: 3px;
+}
+
+.chanchitos-evidence-trigger img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.chanchitos-evidence-modal .modal-card {
+  width: min(100%, 1120px);
+  max-height: calc(100vh - 48px);
+  padding: 18px;
+  border-color: rgba(255, 255, 255, 0.26);
+  background: #17211d;
+  box-shadow: 0 32px 72px rgba(0, 0, 0, 0.42);
+}
+
+.chanchitos-evidence-modal .modal-header {
+  align-items: center;
+}
+
+.chanchitos-evidence-modal .modal-header h2,
+.chanchitos-evidence-modal .modal-header p {
+  color: #ffffff;
+}
+
+.chanchitos-evidence-modal .modal-header p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.74);
+}
+
+.chanchitos-evidence-modal .modal-close {
+  flex: 0 0 auto;
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.chanchitos-evidence-modal-image {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: min(72vh, 760px);
+  object-fit: contain;
+}
+
+.chanchitos-evidence-section {
+  display: grid;
+  gap: 14px;
+}
+
+.chanchitos-image-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.chanchitos-image-error {
+  margin: 0;
+  color: var(--danger-text);
+  font-weight: 700;
+}
+
+.chanchitos-image-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.chanchitos-image-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.chanchitos-image-preview {
+  display: grid;
+  min-height: 156px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px dashed #aab9af;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  text-align: center;
+}
+
+.chanchitos-image-preview img {
+  width: 100%;
+  height: 156px;
+  object-fit: cover;
+}
+
+.chanchitos-image-name,
+.chanchitos-image-help {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.chanchitos-image-name {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.chanchitos-image-help {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.chanchitos-image-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chanchitos-image-actions .button:focus-visible {
+  outline: 3px solid rgba(36, 116, 90, 0.45);
+  outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+  .chanchitos-image-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .chanchitos-evidence-gallery {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 460px) {
+  .chanchitos-evidence-gallery {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media (max-width: 640px) {
   .chanchitos-history-filter-grid,
   .chanchitos-detail-grid {
