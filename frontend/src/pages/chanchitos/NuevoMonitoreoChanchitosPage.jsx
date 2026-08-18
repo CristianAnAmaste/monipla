@@ -9,6 +9,7 @@ import PosicionesMonitoreoGrid from '../../components/chanchitos/PosicionesMonit
 import ResumenMonitoreo from '../../components/chanchitos/ResumenMonitoreo';
 import { useChanchitosCatalogos } from '../../hooks/useChanchitosCatalogos';
 import { useChanchitosForm } from '../../hooks/useChanchitosForm';
+import { useChanchitosImages } from '../../hooks/useChanchitosImages';
 
 function getRequestErrorMessage(error) {
   if (error instanceof ApiClientError) {
@@ -28,6 +29,7 @@ function NuevoMonitoreoChanchitosPage() {
   const formRef = useRef(null);
   const catalogos = useChanchitosCatalogos();
   const form = useChanchitosForm();
+  const images = useChanchitosImages();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -99,7 +101,8 @@ function NuevoMonitoreoChanchitosPage() {
     setRequestError(null);
 
     try {
-      await form.submit();
+      const result = await form.submit(images.files);
+      if (result?.success) images.clear();
     } catch (error) {
       if (error instanceof ApiClientError && error.status === 401) {
         window.location.assign('/login');
@@ -144,7 +147,7 @@ function NuevoMonitoreoChanchitosPage() {
         <DatosOrigenSection values={form.values} fondos={options.fundos} catalogs={catalogos.catalogs} loading={catalogos.loading} errors={form.fieldErrors} onFundoChange={handleFundoChange} onCampoChange={handleCampoChange} onVariedadChange={handleVariedadChange} onCuartelChange={handleChange} />
         <DatosMonitoreoSection values={form.values} estadosFenologicos={options.estadosFenologicos} monitoreadores={options.monitoreadores} errors={form.fieldErrors} onChange={handleChange} />
         <PosicionesMonitoreoGrid values={form.values} errors={form.fieldErrors} onChange={handleChange} />
-        <EvidenciaObservacionesSection values={form.values} onChange={handleChange} />
+        <EvidenciaObservacionesSection values={form.values} onChange={handleChange} images={images} />
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px] lg:items-start">
           <div className="rounded-xl border border-[#dbe5da] bg-white p-5 shadow-sm sm:p-6">
             <h2 className="text-lg font-semibold text-[#1f2922]">Confirmar registro</h2>

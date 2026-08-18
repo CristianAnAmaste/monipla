@@ -36,4 +36,8 @@ router.get('/chanchitos/:id/detalle-parcial', ensureAuthenticated, chanchitosCon
 router.get('/chanchitos/:idMonitoreo/imagenes/:posicion', ensureAuthenticated, chanchitosController.verImagen);
 router.get('/chanchitos/:id', ensureAuthenticated, chanchitosController.mostrarDetalle);
 
+// El shell React reutiliza este middleware para conservar el contrato
+// multipart del formulario EJS sin duplicar su configuración.
+router.recibirImagenes = recibirImagenes;
+
 module.exports = router;

@@ -4,11 +4,17 @@ export function obtenerFormularioChanchitos(signal) {
   return requestJson('/app/api/chanchitos/nuevo', { signal });
 }
 
-export function guardarMonitoreoChanchitos(values) {
+export function guardarMonitoreoChanchitos(values, images = []) {
+  const formData = new FormData();
+
+  Object.entries(values).forEach(([name, value]) => {
+    formData.append(name, value ?? '');
+  });
+  images.forEach((image) => formData.append('imagenes', image));
+
   return requestJson('/app/api/chanchitos', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(values),
+    body: formData,
   });
 }
 

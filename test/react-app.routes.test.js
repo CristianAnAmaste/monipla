@@ -134,11 +134,12 @@ test('POST /app/api/chanchitos reutiliza el servicio y responde creación JSON',
   const body = { genFundo: '10', cantidad_1_1: '0' };
   const usuario = { id: 12, rol: 'usuario' };
 
-  await controller.crearMonitoreoChanchitos({ body, session: { usuario } }, response);
+  const files = [{ buffer: Buffer.from('uno') }, { buffer: Buffer.from('dos') }, { buffer: Buffer.from('tres') }];
+  await controller.crearMonitoreoChanchitos({ body, files, session: { usuario } }, response);
 
   assert.equal(response.statusCode, 201);
   assert.deepEqual(response.body, { success: true, data: { idMonitoreo: 88 } });
-  assert.deepEqual(llamadas, [[body, usuario]]);
+  assert.deepEqual(llamadas, [[body, usuario, { files, uploadError: undefined }]]);
 });
 
 test('POST /app/api/chanchitos conserva los errores de validación del servicio', async () => {
@@ -184,12 +185,37 @@ test('las rutas React usan los middlewares adecuados y /home conserva controller
   assert.match(reactRoutes, /router\.get\('\/app', ensureAuthenticated, reactAppController\.index\)/);
   assert.match(reactRoutes, /router\.get\('\/app\/chanchitos\/nuevo', ensureAuthenticated, reactAppController\.index\)/);
   assert.match(reactRoutes, /router\.get\('\/app\/api\/chanchitos\/nuevo', ensureApiAuthenticated, reactAppController\.obtenerFormularioChanchitos\)/);
-  assert.match(reactRoutes, /router\.post\('\/app\/api\/chanchitos', ensureApiAuthenticated, reactAppController\.crearMonitoreoChanchitos\)/);
+  assert.match(reactRoutes, /chanchitosRoutes\.recibirImagenes/);
+  assert.match(reactRoutes, /router\.post\([\s\S]*'\/app\/api\/chanchitos'[\s\S]*ensureApiAuthenticated[\s\S]*chanchitosRoutes\.recibirImagenes/);
   assert.match(reactRoutes, /router\.get\('\/app\/bootstrap', ensureApiAuthenticated, reactAppController\.bootstrap\)/);
   assert.match(homeRoutes, /router\.get\('\/home', ensureAuthenticated, homeController\.index\)/);
   assert.match(appSource, /app\.use\('\/react-app\/assets', express\.static/);
   assert.match(appSource, /app\.use\(reactAppRoutes\)/);
   assert.match(appSource, /app\.use\(chanchitosRoutes\)/);
+});
+
+test('POST /app/api/chanchitos entrega el error multipart compartido al servicio', async () => {
+  const uploadError = new Error('LIMIT_FILE_COUNT');
+  const calls = [];
+  const controller = new ReactAppController({
+    chanchitosService: {
+      guardarMonitoreo: async (...args) => {
+        calls.push(args);
+        return { success: false, errors: ['Solo puedes adjuntar hasta tres imágenes.'] };
+      },
+    },
+  });
+  const response = createResponse();
+
+  await controller.crearMonitoreoChanchitos({
+    body: {},
+    files: [],
+    uploadImagenesError: uploadError,
+    session: { usuario: { id: 12 } },
+  }, response);
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(calls[0][2].uploadError, uploadError);
 });
 
 test('/home conserva el controller y la vista actuales', () => {

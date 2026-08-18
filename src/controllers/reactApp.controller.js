@@ -62,7 +62,11 @@ class ReactAppController {
     try {
       const result = await this.chanchitosService.guardarMonitoreo(
         req.body,
-        req.session.usuario
+        req.session.usuario,
+        {
+          files: req.files,
+          uploadError: req.uploadImagenesError,
+        },
       );
 
       if (!result.success) {
@@ -80,9 +84,19 @@ class ReactAppController {
       });
     } catch (error) {
       console.error('[MONIPLA][REACT][CHANCHITOS][CREAR][ERROR]', error);
-      return res.status(500).json({
+      const status = [400, 403, 409].includes(Number(error.statusCode))
+        ? Number(error.statusCode)
+        : 500;
+      const messages = {
+        400: 'No fue posible validar la información enviada.',
+        403: 'No tienes permisos para realizar esta acción.',
+        409: 'No fue posible guardar el monitoreo por un conflicto de datos.',
+        500: 'No fue posible guardar el Monitoreo de Chanchitos. Revise los datos e intente nuevamente.',
+      };
+
+      return res.status(status).json({
         success: false,
-        message: 'No fue posible guardar el Monitoreo de Chanchitos. Revise los datos e intente nuevamente.',
+        message: messages[status],
       });
     }
   }

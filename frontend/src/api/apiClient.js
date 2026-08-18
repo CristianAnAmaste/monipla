@@ -9,15 +9,26 @@ export class ApiClientError extends Error {
 
 export async function requestJson(url, options = {}) {
   let response;
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  const shouldSerializeJson = options.body
+    && typeof options.body === 'object'
+    && !isFormData
+    && !(options.body instanceof Blob);
+  const headers = {
+    Accept: 'application/json',
+    ...options.headers,
+  };
+
+  if (shouldSerializeJson && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
 
   try {
     response = await fetch(url, {
       ...options,
       credentials: 'include',
-      headers: {
-        Accept: 'application/json',
-        ...options.headers,
-      },
+      body: shouldSerializeJson ? JSON.stringify(options.body) : options.body,
+      headers,
     });
   } catch (error) {
     if (error.name === 'AbortError') {

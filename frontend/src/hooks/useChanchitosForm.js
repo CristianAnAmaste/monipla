@@ -31,7 +31,7 @@ export function useChanchitosForm() {
     setSuccess(null);
   }, []);
 
-  const submit = useCallback(async () => {
+  const submit = useCallback(async (images = []) => {
     if (submittingRef.current) {
       return { success: false, ignored: true };
     }
@@ -51,7 +51,7 @@ export function useChanchitosForm() {
     setFirstInvalidField(null);
 
     try {
-      const response = await guardarMonitoreoChanchitos(values);
+      const response = await guardarMonitoreoChanchitos(values, images);
       setSuccess(response.data);
       return { success: true, data: response.data };
     } catch (error) {
