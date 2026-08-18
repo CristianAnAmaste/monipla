@@ -11,7 +11,8 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: true,
     proxy: {
-      '/app': 'http://127.0.0.1:3001',
+      '/app/api': 'http://127.0.0.1:3001',
+      '/app/bootstrap': 'http://127.0.0.1:3001',
       '/login': 'http://127.0.0.1:3001',
       '/logout': 'http://127.0.0.1:3001',
       '/home': 'http://127.0.0.1:3001',

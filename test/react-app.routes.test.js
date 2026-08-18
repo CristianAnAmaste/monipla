@@ -105,16 +105,91 @@ test('GET /app/bootstrap para usuario normal no incluye /usuarios', () => {
   assert.equal(response.body.menu.some((item) => item.href === '/usuarios'), false);
 });
 
+test('GET /app/api/chanchitos/nuevo entrega los datos iniciales con sesión', async () => {
+  const formulario = {
+    values: { genFundo: '', idCatalogoSdp: '' },
+    opciones: { fundos: [{ value: 10, label: 'Fundo Norte' }], estadosFenologicos: [], monitoreadores: [] },
+  };
+  const controller = new ReactAppController({
+    chanchitosService: { getFormularioData: async () => formulario },
+  });
+  const response = createResponse();
+
+  await controller.obtenerFormularioChanchitos({ session: { usuario: { id: 12 } } }, response);
+
+  assert.deepEqual(response.body, { success: true, data: formulario });
+});
+
+test('POST /app/api/chanchitos reutiliza el servicio y responde creación JSON', async () => {
+  const llamadas = [];
+  const controller = new ReactAppController({
+    chanchitosService: {
+      guardarMonitoreo: async (...args) => {
+        llamadas.push(args);
+        return { success: true, id_monitoreo: 88 };
+      },
+    },
+  });
+  const response = createResponse();
+  const body = { genFundo: '10', cantidad_1_1: '0' };
+  const usuario = { id: 12, rol: 'usuario' };
+
+  await controller.crearMonitoreoChanchitos({ body, session: { usuario } }, response);
+
+  assert.equal(response.statusCode, 201);
+  assert.deepEqual(response.body, { success: true, data: { idMonitoreo: 88 } });
+  assert.deepEqual(llamadas, [[body, usuario]]);
+});
+
+test('POST /app/api/chanchitos conserva los errores de validación del servicio', async () => {
+  const controller = new ReactAppController({
+    chanchitosService: {
+      guardarMonitoreo: async () => ({
+        success: false,
+        errors: ['Debe seleccionar un cuartel valido.'],
+        values: { idCatalogoSdp: '' },
+        resumenCatalogo: null,
+      }),
+    },
+  });
+  const response = createResponse();
+
+  await controller.crearMonitoreoChanchitos({ body: {}, session: { usuario: { id: 12 } } }, response);
+
+  assert.equal(response.statusCode, 400);
+  assert.deepEqual(response.body.errors, ['Debe seleccionar un cuartel valido.']);
+  assert.deepEqual(response.body.values, { idCatalogoSdp: '' });
+});
+
+test('POST /app/api/chanchitos oculta errores inesperados del servicio', async () => {
+  const controller = new ReactAppController({
+    chanchitosService: { guardarMonitoreo: async () => { throw new Error('FALLA_SQL_INTERNA'); } },
+  });
+  const response = createResponse();
+
+  await controller.crearMonitoreoChanchitos({ body: {}, session: { usuario: { id: 12 } } }, response);
+
+  assert.equal(response.statusCode, 500);
+  assert.deepEqual(response.body, {
+    success: false,
+    message: 'No fue posible guardar el Monitoreo de Chanchitos. Revise los datos e intente nuevamente.',
+  });
+});
+
 test('las rutas React usan los middlewares adecuados y /home conserva controller y vista', () => {
   const reactRoutes = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'reactApp.routes.js'), 'utf8');
   const homeRoutes = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'home.routes.js'), 'utf8');
   const appSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'app.js'), 'utf8');
 
   assert.match(reactRoutes, /router\.get\('\/app', ensureAuthenticated, reactAppController\.index\)/);
+  assert.match(reactRoutes, /router\.get\('\/app\/chanchitos\/nuevo', ensureAuthenticated, reactAppController\.index\)/);
+  assert.match(reactRoutes, /router\.get\('\/app\/api\/chanchitos\/nuevo', ensureApiAuthenticated, reactAppController\.obtenerFormularioChanchitos\)/);
+  assert.match(reactRoutes, /router\.post\('\/app\/api\/chanchitos', ensureApiAuthenticated, reactAppController\.crearMonitoreoChanchitos\)/);
   assert.match(reactRoutes, /router\.get\('\/app\/bootstrap', ensureApiAuthenticated, reactAppController\.bootstrap\)/);
   assert.match(homeRoutes, /router\.get\('\/home', ensureAuthenticated, homeController\.index\)/);
   assert.match(appSource, /app\.use\('\/react-app\/assets', express\.static/);
   assert.match(appSource, /app\.use\(reactAppRoutes\)/);
+  assert.match(appSource, /app\.use\(chanchitosRoutes\)/);
 });
 
 test('/home conserva el controller y la vista actuales', () => {

@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import AppShell from './components/layout/AppShell';
 import DashboardPage from './pages/DashboardPage';
+import NuevoMonitoreoChanchitosPage from './pages/chanchitos/NuevoMonitoreoChanchitosPage';
 
 function App() {
+  const location = useLocation();
   const [bootstrap, setBootstrap] = useState({ status: 'loading', data: null });
   const [attempt, setAttempt] = useState(0);
 
@@ -14,7 +17,7 @@ function App() {
 
       try {
         const response = await fetch('/app/bootstrap', {
-          credentials: 'same-origin',
+          credentials: 'include',
           signal: controller.signal,
         });
 
@@ -71,11 +74,16 @@ function App() {
     );
   }
 
-  const { user, menu, currentPath } = bootstrap.data;
+  const { user, menu } = bootstrap.data;
 
   return (
-    <AppShell user={user} menu={menu} currentPath={currentPath}>
-      <DashboardPage user={user} menu={menu} />
+    <AppShell user={user} menu={menu} currentPath={location.pathname}>
+      <Routes>
+        <Route path="/app" element={<DashboardPage user={user} menu={menu} />} />
+        <Route path="/app/chanchitos/nuevo" element={<NuevoMonitoreoChanchitosPage />} />
+        <Route path="/" element={<Navigate to="/app" replace />} />
+        <Route path="*" element={<Navigate to="/app" replace />} />
+      </Routes>
     </AppShell>
   );
 }
