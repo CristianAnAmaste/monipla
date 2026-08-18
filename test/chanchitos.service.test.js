@@ -209,6 +209,57 @@ test('obtiene imagenes historicas JPEG, PNG o WebP y rechaza posiciones invalida
   await assert.rejects(servicio.obtenerImagen('88', '4'), /IMAGEN_CHANCHITO_NO_DISPONIBLE/);
 });
 
+test('prepara el detalle individual para PDF y recupera las tres evidencias en una sola llamada', async () => {
+  const llamadas = [];
+  const imagen1 = Buffer.from([0xff, 0xd8, 0xff]);
+  const imagen3 = Buffer.from([0xff, 0xd8, 0xff, 0x00]);
+  const repository = {
+    obtenerDetalleChanchitos: async (idMonitoreo) => ({
+      cabecera: {
+        id_monitoreo: idMonitoreo,
+        fecha_monitoreo: '2026-08-12',
+        fecha_registro: '2026-08-12',
+        nombre_fundo: 'Fundo PDF',
+        nombre_campo: 'Campo PDF',
+        nombre_variedad: 'Variedad PDF',
+        codigo_cuartel: 'A-1',
+        sdp: 'SDP-1',
+        csg: 'CSG-1',
+        trazabilidad: 'TR-1',
+        cant_plantas: 12,
+        nombre_monitoreador: 'Monitoreador PDF',
+        nombre_estado_fenologico: 'Pinta',
+        observaciones: '',
+        nombre_estacion_meteo: 'Estacion PDF',
+        horas_frio_acumuladas: 10.5,
+        dias_grado_acumulados: 4.25,
+        fecha_corte_agroclima: '2026-08-12',
+        agroclima_observacion: '',
+        tiene_imagen_1: 1,
+        tiene_imagen_2: 0,
+        tiene_imagen_3: 1,
+        total_bichos: 3,
+        posiciones_con_deteccion: 2,
+      },
+      detalles: [{ id_estadomonitoreo: 1, id_estadoposicion: 1, cantidad_bichos: 3 }],
+    }),
+    obtenerImagenesMonitoreoChanchitos: async (idMonitoreo) => {
+      llamadas.push(idMonitoreo);
+      return [{ posicion: 1, buffer: imagen1 }, { posicion: 3, buffer: imagen3 }];
+    },
+  };
+  const servicio = new ChanchitosService(repository, {}, {}, {});
+
+  const detalle = await servicio.obtenerDetalleParaPdf('88');
+
+  assert.deepEqual(llamadas, [88]);
+  assert.equal(detalle.idMonitoreo, 88);
+  assert.equal(detalle.imagenes.length, 2);
+  assert.equal(detalle.imagenes[0].buffer, imagen1);
+  assert.equal(detalle.matriz[0].posiciones[0].cantidad, 3);
+  await assert.rejects(servicio.obtenerDetalleParaPdf('invalido'), /CHANCHITO_NO_EXISTE/);
+});
+
 test('guarda Chanchitos sin estacion meteorologica con acumulados nulos', async () => {
   const agroclimaSnapshot = {
     horasFrioAcumuladas: null,

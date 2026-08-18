@@ -16,6 +16,7 @@ class ChanchitosController {
     this.mostrarDetalle = this.mostrarDetalle.bind(this);
     this.verImagen = this.verImagen.bind(this);
     this.descargarPdfGeneral = this.descargarPdfGeneral.bind(this);
+    this.descargarPdfIndividual = this.descargarPdfIndividual.bind(this);
   }
 
   async nuevo(req, res) {
@@ -131,6 +132,38 @@ class ChanchitosController {
         pageMessage: status === 400
           ? 'Los filtros de fecha no son validos para generar el reporte.'
           : 'No fue posible generar el reporte general de Chanchitos.',
+      });
+    }
+  }
+
+  async descargarPdfIndividual(req, res) {
+    const { idMonitoreo } = req.params;
+
+    try {
+      const detalle = await this.chanchitosService.obtenerDetalleParaPdf(idMonitoreo);
+      const pdf = await this.chanchitosPdfService.generarInformeIndividual(detalle);
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${pdf.filename}"`);
+      res.setHeader('Content-Length', pdf.buffer.length);
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Cache-Control', 'no-store');
+
+      return res.send(pdf.buffer);
+    } catch (error) {
+      const status = error.message === 'CHANCHITO_NO_EXISTE' ? 404 : 500;
+      console.error('[MONIPLA][CHANCHITOS][PDF_INDIVIDUAL][ERROR]', {
+        idMonitoreo,
+        error: error.message,
+      });
+
+      return res.status(status).render('layouts/main', {
+        title: 'PDF de Monitoreo de Chanchitos',
+        contentView: '../monitoreos/placeholder',
+        pageTitle: status === 404 ? 'Monitoreo no disponible' : 'PDF no disponible',
+        pageMessage: status === 404
+          ? 'El monitoreo de Chanchitos solicitado no existe.'
+          : 'No fue posible generar el PDF del monitoreo solicitado.',
       });
     }
   }
