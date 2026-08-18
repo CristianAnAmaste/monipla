@@ -1,3 +1,9 @@
+const COLUMNAS_IMAGEN_CHANCHITOS = Object.freeze({
+  1: 'imagenmonitoreo',
+  2: 'seg_imagenmonitoreo',
+  3: 'terc_imagenmonitoreo',
+});
+
 class ChanchitosRepository {
   constructor(database = null) {
     const db = database || require('../config/db');
@@ -601,6 +607,9 @@ class ChanchitosRepository {
           cab.semana_iso_corte,
           cab.temporada_agroclima,
           cab.agroclima_observacion,
+          CONVERT(bit, CASE WHEN cab.imagenmonitoreo IS NULL THEN 0 ELSE 1 END) AS tiene_imagen_1,
+          CONVERT(bit, CASE WHEN cab.seg_imagenmonitoreo IS NULL THEN 0 ELSE 1 END) AS tiene_imagen_2,
+          CONVERT(bit, CASE WHEN cab.terc_imagenmonitoreo IS NULL THEN 0 ELSE 1 END) AS tiene_imagen_3,
           ISNULL(detalles.total_bichos, 0) AS total_bichos,
           ISNULL(detalles.posiciones_con_deteccion, 0) AS posiciones_con_deteccion
         FROM dbo.MONI_CABECERAMONITOREO cab
@@ -657,6 +666,49 @@ class ChanchitosRepository {
     }
 
     return { cabecera, detalles: recordsets[1] || [] };
+  }
+
+  async obtenerImagenMonitoreoChanchitos(idMonitoreo, posicion) {
+    const columna = COLUMNAS_IMAGEN_CHANCHITOS[posicion];
+
+    if (!columna) {
+      return null;
+    }
+
+    const request = await this.createRequest();
+    const result = await request
+      .input('idMonitoreo', this.sql.Int, idMonitoreo)
+      .query(`
+        SELECT ${columna} AS imagen
+        FROM dbo.MONI_CABECERAMONITOREO
+        WHERE id_monitoreo = @idMonitoreo
+      `);
+    const imagen = result.recordset && result.recordset[0] && result.recordset[0].imagen;
+
+    return Buffer.isBuffer(imagen) && imagen.length > 0 ? imagen : null;
+  }
+
+  async obtenerImagenesMonitoreoChanchitos(idMonitoreo) {
+    const request = await this.createRequest();
+    const result = await request
+      .input('idMonitoreo', this.sql.Int, idMonitoreo)
+      .query(`
+        SELECT
+          imagenmonitoreo AS imagen_1,
+          seg_imagenmonitoreo AS imagen_2,
+          terc_imagenmonitoreo AS imagen_3
+        FROM dbo.MONI_CABECERAMONITOREO
+        WHERE id_monitoreo = @idMonitoreo
+      `);
+    const row = result.recordset && result.recordset[0];
+
+    if (!row) {
+      return [];
+    }
+
+    return [1, 2, 3]
+      .map((posicion) => ({ posicion, buffer: row[`imagen_${posicion}`] }))
+      .filter((imagen) => Buffer.isBuffer(imagen.buffer) && imagen.buffer.length > 0);
   }
 
   crearRequestHistorial(pool, filtros) {
@@ -775,6 +827,7 @@ class ChanchitosRepository {
 
   async insertarCabecera(catalogo, cabecera, transaction) {
     const agroclima = cabecera.agroclimaSnapshot || {};
+    const imagenes = Array.isArray(cabecera.imagenes) ? cabecera.imagenes : [];
     const request = await this.createRequest(transaction);
     const result = await request
       .input('genFundo', this.sql.Int, catalogo.gen_fundo)
@@ -798,6 +851,9 @@ class ChanchitosRepository {
       .input('semanaIsoCorte', this.sql.TinyInt, agroclima.semanaIsoCorte ?? null)
       .input('temporadaAgroclima', this.sql.VarChar(9), agroclima.temporadaAgroclima || null)
       .input('agroclimaObservacion', this.sql.NVarChar(250), agroclima.agroclimaObservacion || null)
+      .input('imagen1', this.sql.VarBinary(this.sql.MAX), imagenes[0] || null)
+      .input('imagen2', this.sql.VarBinary(this.sql.MAX), imagenes[1] || null)
+      .input('imagen3', this.sql.VarBinary(this.sql.MAX), imagenes[2] || null)
       .query(`
         INSERT INTO dbo.MONI_CABECERAMONITOREO (
           gen_fundo,
@@ -842,11 +898,11 @@ class ChanchitosRepository {
           SYSDATETIME(),
           @idEstadoFenologico,
           @observaciones,
-          NULL,
+          @imagen1,
           NULL,
           @idMonitoreador,
-          NULL,
-          NULL,
+          @imagen2,
+          @imagen3,
           @csg,
           @idCatalogoSdp,
           @horasFrioAcumuladas,

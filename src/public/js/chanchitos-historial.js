@@ -39,6 +39,65 @@ if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded
   const modalEliminar = document.getElementById('chanchitos-eliminar-modal');
   const formularioEliminar = document.getElementById('chanchitos-eliminar-form');
   const confirmarEliminacion = document.getElementById('chanchitos-confirmar-eliminacion');
+  let botonEvidenciaActivo = null;
+
+  const crearModalEvidencia = () => {
+    const existente = document.getElementById('chanchitos-evidence-modal');
+    if (existente) return existente;
+
+    const modal = document.createElement('div');
+    modal.id = 'chanchitos-evidence-modal';
+    modal.className = 'modal-shell chanchitos-evidence-modal is-hidden';
+    modal.hidden = true;
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-hidden', 'true');
+    modal.setAttribute('aria-labelledby', 'chanchitos-evidence-modal-title');
+    modal.innerHTML = `
+      <div class="modal-backdrop" data-close-chanchitos-evidence-modal="true"></div>
+      <div class="modal-card" role="document">
+        <header class="modal-header">
+          <div>
+            <h2 id="chanchitos-evidence-modal-title">Imagen de evidencia</h2>
+            <p data-chanchitos-evidence-description></p>
+          </div>
+          <button class="modal-close" type="button" data-close-chanchitos-evidence-modal="true" aria-label="Cerrar imagen ampliada">×</button>
+        </header>
+        <img class="chanchitos-evidence-modal-image" alt="">
+      </div>
+    `;
+    document.body.appendChild(modal);
+    return modal;
+  };
+
+  const modalEvidencia = crearModalEvidencia();
+  const imagenEvidencia = modalEvidencia.querySelector('.chanchitos-evidence-modal-image');
+  const descripcionEvidencia = modalEvidencia.querySelector('[data-chanchitos-evidence-description]');
+  const cerrarEvidencia = () => {
+    if (modalEvidencia.hidden) return;
+    modalEvidencia.classList.add('is-hidden');
+    modalEvidencia.hidden = true;
+    modalEvidencia.setAttribute('aria-hidden', 'true');
+    imagenEvidencia.removeAttribute('src');
+    document.body.classList.remove('has-modal-open');
+    botonEvidenciaActivo?.focus();
+    botonEvidenciaActivo = null;
+  };
+  const abrirEvidencia = (trigger) => {
+    const url = trigger.getAttribute('href');
+    if (!url) return;
+
+    botonEvidenciaActivo = trigger;
+    const descripcion = trigger.dataset.evidenceLabel || 'Imagen de evidencia del monitoreo';
+    imagenEvidencia.src = url;
+    imagenEvidencia.alt = descripcion;
+    descripcionEvidencia.textContent = descripcion;
+    modalEvidencia.classList.remove('is-hidden');
+    modalEvidencia.hidden = false;
+    modalEvidencia.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('has-modal-open');
+    modalEvidencia.querySelector('[data-close-chanchitos-evidence-modal="true"]:not(.modal-backdrop)')?.focus();
+  };
 
   const obtenerElementosDetalle = (idMonitoreo) => ({
     row: document.querySelector(`[data-detail-row="${idMonitoreo}"]`),
@@ -152,6 +211,13 @@ if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded
       return;
     }
 
+    const evidenceTrigger = event.target.closest('[data-chanchitos-evidence="true"]');
+    if (evidenceTrigger) {
+      event.preventDefault();
+      abrirEvidencia(evidenceTrigger);
+      return;
+    }
+
     const deleteButton = event.target.closest(SELECTOR_BOTON_ELIMINAR);
     if (deleteButton) {
       event.preventDefault();
@@ -162,6 +228,12 @@ if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded
     if (event.target.closest('[data-close-chanchitos-delete-modal="true"]')) {
       event.preventDefault();
       cerrarModalEliminacion();
+      return;
+    }
+
+    if (event.target.closest('[data-close-chanchitos-evidence-modal="true"]')) {
+      event.preventDefault();
+      cerrarEvidencia();
     }
   });
 
@@ -173,6 +245,11 @@ if (typeof document !== 'undefined') document.addEventListener('DOMContentLoaded
   });
 
   document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && !modalEvidencia.hidden) {
+      cerrarEvidencia();
+      return;
+    }
+
     if (event.key === 'Escape' && modalEliminar && !modalEliminar.hidden) {
       cerrarModalEliminacion();
     }

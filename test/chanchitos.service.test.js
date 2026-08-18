@@ -51,6 +51,7 @@ function crearServicio({
     temporadaAgroclima: '2026',
     agroclimaObservacion: 'Agroclima OK desde Meteo FEAL.',
   },
+  chanchitosImagenService = { procesarImagenes: async () => [] },
 } = {}) {
   const llamadasCatalogo = [];
   const llamadasAgroclima = [];
@@ -79,7 +80,7 @@ function crearServicio({
     llamadasCatalogo,
     llamadasAgroclima,
     repository,
-    servicio: new ChanchitosService(repository, catalogoService, agroclimaService),
+    servicio: new ChanchitosService(repository, catalogoService, agroclimaService, chanchitosImagenService),
   };
 }
 
@@ -141,6 +142,122 @@ test('construye un payload valido con las 12 combinaciones canonicas y snapshot 
   assert.deepEqual(llamadasAgroclima, [[10, '2026-08-06']]);
   assert.equal(payloadRecibido.cabecera.agroclimaSnapshot.horasFrioAcumuladas, 430.15);
   assert.equal(payloadRecibido.cabecera.agroclimaSnapshot.diasGradoAcumulados, 120.45);
+});
+
+test('entrega al repositorio exclusivamente los buffers optimizados de las imagenes', async () => {
+  const optimizado = Buffer.from([0xff, 0xd8, 0xff, 0x00]);
+  const archivos = [{ buffer: Buffer.from('original'), mimetype: 'image/png', size: 8 }];
+  const llamadas = [];
+  const { servicio, repository } = crearServicio({
+    chanchitosImagenService: {
+      procesarImagenes: async (...args) => {
+        llamadas.push(args);
+        return [optimizado];
+      },
+    },
+  });
+  let payloadRecibido;
+  repository.crearMonitoreoTransaccional = async (payload) => {
+    payloadRecibido = payload;
+    return { id_monitoreo: 88 };
+  };
+
+  const result = await servicio.guardarMonitoreo(crearBody(), { id: 12 }, { files: archivos });
+
+  assert.equal(result.success, true);
+  assert.deepEqual(llamadas, [[archivos, undefined]]);
+  assert.deepEqual(payloadRecibido.cabecera.imagenes, [optimizado]);
+  assert.notEqual(payloadRecibido.cabecera.imagenes[0], archivos[0].buffer);
+});
+
+test('rechaza una imagen cuando el optimizador informa un error controlado', async () => {
+  const { servicio, repository } = crearServicio({
+    chanchitosImagenService: {
+      procesarImagenes: async () => {
+        const error = new Error('IMAGEN_CORRUPTA');
+        error.userMessage = 'Imagen 1: no fue posible procesar el archivo seleccionado.';
+        throw error;
+      },
+    },
+  });
+  let persistido = false;
+  repository.crearMonitoreoTransaccional = async () => { persistido = true; };
+
+  const result = await servicio.guardarMonitoreo(crearBody(), { id: 12 }, { files: [{}] });
+
+  assert.equal(result.success, false);
+  assert.match(result.errors[0], /Imagen 1/);
+  assert.equal(persistido, false);
+});
+
+test('obtiene imagenes historicas JPEG, PNG o WebP y rechaza posiciones invalidas', async () => {
+  const repository = {
+    obtenerImagenMonitoreoChanchitos: async (id, posicion) => {
+      assert.equal(id, 88);
+      return {
+        1: Buffer.from([0xff, 0xd8, 0xff]),
+        2: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        3: Buffer.from('RIFF0000WEBP', 'ascii'),
+      }[posicion] || null;
+    },
+  };
+  const servicio = new ChanchitosService(repository, {}, {}, { procesarImagenes: async () => [] });
+
+  assert.equal((await servicio.obtenerImagen('88', '1')).mime, 'image/jpeg');
+  assert.equal((await servicio.obtenerImagen('88', '2')).mime, 'image/png');
+  assert.equal((await servicio.obtenerImagen('88', '3')).mime, 'image/webp');
+  await assert.rejects(servicio.obtenerImagen('88', '4'), /IMAGEN_CHANCHITO_NO_DISPONIBLE/);
+});
+
+test('prepara el detalle individual para PDF y recupera las tres evidencias en una sola llamada', async () => {
+  const llamadas = [];
+  const imagen1 = Buffer.from([0xff, 0xd8, 0xff]);
+  const imagen3 = Buffer.from([0xff, 0xd8, 0xff, 0x00]);
+  const repository = {
+    obtenerDetalleChanchitos: async (idMonitoreo) => ({
+      cabecera: {
+        id_monitoreo: idMonitoreo,
+        fecha_monitoreo: '2026-08-12',
+        fecha_registro: '2026-08-12',
+        nombre_fundo: 'Fundo PDF',
+        nombre_campo: 'Campo PDF',
+        nombre_variedad: 'Variedad PDF',
+        codigo_cuartel: 'A-1',
+        sdp: 'SDP-1',
+        csg: 'CSG-1',
+        trazabilidad: 'TR-1',
+        cant_plantas: 12,
+        nombre_monitoreador: 'Monitoreador PDF',
+        nombre_estado_fenologico: 'Pinta',
+        observaciones: '',
+        nombre_estacion_meteo: 'Estacion PDF',
+        horas_frio_acumuladas: 10.5,
+        dias_grado_acumulados: 4.25,
+        fecha_corte_agroclima: '2026-08-12',
+        agroclima_observacion: '',
+        tiene_imagen_1: 1,
+        tiene_imagen_2: 0,
+        tiene_imagen_3: 1,
+        total_bichos: 3,
+        posiciones_con_deteccion: 2,
+      },
+      detalles: [{ id_estadomonitoreo: 1, id_estadoposicion: 1, cantidad_bichos: 3 }],
+    }),
+    obtenerImagenesMonitoreoChanchitos: async (idMonitoreo) => {
+      llamadas.push(idMonitoreo);
+      return [{ posicion: 1, buffer: imagen1 }, { posicion: 3, buffer: imagen3 }];
+    },
+  };
+  const servicio = new ChanchitosService(repository, {}, {}, {});
+
+  const detalle = await servicio.obtenerDetalleParaPdf('88');
+
+  assert.deepEqual(llamadas, [88]);
+  assert.equal(detalle.idMonitoreo, 88);
+  assert.equal(detalle.imagenes.length, 2);
+  assert.equal(detalle.imagenes[0].buffer, imagen1);
+  assert.equal(detalle.matriz[0].posiciones[0].cantidad, 3);
+  await assert.rejects(servicio.obtenerDetalleParaPdf('invalido'), /CHANCHITO_NO_EXISTE/);
 });
 
 test('guarda Chanchitos sin estacion meteorologica con acumulados nulos', async () => {

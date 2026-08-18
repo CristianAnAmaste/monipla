@@ -1,6 +1,7 @@
 const ChanchitosRepository = require('../repositories/chanchitos.repository');
 const CatalogoSdpService = require('./catalogoSdp.service');
 const AgroclimaMoniplaService = require('./agroclimaMonipla.service');
+const ChanchitosImagenService = require('./chanchitosImagen.service');
 const { performance } = require('node:perf_hooks');
 
 const MAX_INT = 2147483647;
@@ -18,11 +19,13 @@ class ChanchitosService {
   constructor(
     chanchitosRepository = null,
     catalogoSdpService = new CatalogoSdpService(),
-    agroclimaService = new AgroclimaMoniplaService()
+    agroclimaService = new AgroclimaMoniplaService(),
+    chanchitosImagenService = new ChanchitosImagenService()
   ) {
     this.chanchitosRepository = chanchitosRepository || new ChanchitosRepository();
     this.catalogoSdpService = catalogoSdpService;
     this.agroclimaService = agroclimaService;
+    this.chanchitosImagenService = chanchitosImagenService;
   }
 
   async getFormularioData(values = this.getValoresIniciales()) {
@@ -42,7 +45,7 @@ class ChanchitosService {
     };
   }
 
-  async guardarMonitoreo(data, usuarioSesion) {
+  async guardarMonitoreo(data, usuarioSesion, archivos = {}) {
     const validacion = await this.validarRegistro(data, usuarioSesion);
 
     if (!validacion.success) {
@@ -50,6 +53,21 @@ class ChanchitosService {
     }
 
     const { values, detalles, catalogo } = validacion;
+    let imagenes;
+
+    try {
+      imagenes = await this.chanchitosImagenService.procesarImagenes(
+        archivos.files,
+        archivos.uploadError
+      );
+    } catch (error) {
+      return {
+        success: false,
+        errors: [error.userMessage || 'No fue posible procesar las imagenes adjuntas.'],
+        values,
+        resumenCatalogo: validacion.resumenCatalogo,
+      };
+    }
     const agroclimaSnapshot = await this.agroclimaService.calcularSnapshotSeguroPorFundo(
       catalogo.gen_fundo,
       values.fechaMonitoreo
@@ -70,6 +88,7 @@ class ChanchitosService {
         observaciones: values.observaciones || null,
         idMonitoreador: values.idMonitoreador,
         agroclimaSnapshot,
+        imagenes,
       },
       detalles,
       revalidarCatalogoSdp: (transaction) => this.catalogoSdpService.resolverCanonicoPorId(
@@ -222,6 +241,12 @@ class ChanchitosService {
       csg: this.textoSeguro(cabecera.csg),
       trazabilidad: this.textoSeguro(cabecera.trazabilidad),
       observaciones: this.textoSeguro(cabecera.observaciones),
+      imagenes: [1, 2, 3]
+        .filter((posicion) => Boolean(cabecera[`tiene_imagen_${posicion}`]))
+        .map((posicion) => ({
+          posicion,
+          url: `/chanchitos/${id}/imagenes/${posicion}`,
+        })),
       matriz: ESTADOS.map((idEstadoMonitoreo) => ({
         idEstadoMonitoreo,
         nombre: ({ 1: 'Ovisaco', 2: 'Ninfa', 3: 'Adulto' })[idEstadoMonitoreo],
@@ -237,6 +262,43 @@ class ChanchitosService {
       totalMs: Math.round(performance.now() - inicioTotal),
     });
     return detalle;
+  }
+
+  async obtenerDetalleParaPdf(idMonitoreo) {
+    const id = this.normalizarId(idMonitoreo);
+
+    if (!id) {
+      throw new Error('CHANCHITO_NO_EXISTE');
+    }
+
+    const detalle = await this.obtenerDetalle(id);
+    const imagenes = await this.chanchitosRepository.obtenerImagenesMonitoreoChanchitos(id);
+
+    return {
+      ...detalle,
+      imagenes,
+    };
+  }
+
+  async obtenerImagen(idMonitoreo, posicion) {
+    const id = this.normalizarId(idMonitoreo);
+    const posicionNormalizada = Number.parseInt(posicion, 10);
+
+    if (!id || ![1, 2, 3].includes(posicionNormalizada) || String(posicionNormalizada) !== String(posicion)) {
+      throw new Error('IMAGEN_CHANCHITO_NO_DISPONIBLE');
+    }
+
+    const buffer = await this.chanchitosRepository.obtenerImagenMonitoreoChanchitos(
+      id,
+      posicionNormalizada
+    );
+    const mime = this.detectarMimeImagen(buffer);
+
+    if (!mime) {
+      throw new Error('IMAGEN_CHANCHITO_NO_DISPONIBLE');
+    }
+
+    return { buffer, mime };
   }
 
   async validarRegistro(data, usuarioSesion) {
@@ -535,6 +597,23 @@ class ChanchitosService {
 
     const parsed = Number.parseInt(raw, 10);
     return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= MAX_INT ? parsed : '';
+  }
+
+  detectarMimeImagen(buffer) {
+    if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+      return null;
+    }
+    if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+      return 'image/jpeg';
+    }
+    if (buffer.length >= 8 && buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+      return 'image/png';
+    }
+    if (buffer.length >= 12 && buffer.subarray(0, 4).toString('ascii') === 'RIFF'
+      && buffer.subarray(8, 12).toString('ascii') === 'WEBP') {
+      return 'image/webp';
+    }
+    return null;
   }
 
   normalizarEnteroPositivo(value) {
