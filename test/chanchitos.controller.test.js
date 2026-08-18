@@ -34,6 +34,42 @@ test('la ruta del PDF general exige autenticacion', () => {
   assert.match(rutas, /router\.get\('\/chanchitos\/pdf\/general', ensureAuthenticated, chanchitosController\.descargarPdfGeneral\)/);
 });
 
+test('entrega las tres posiciones de imagen con headers seguros y responde 404 si no existe', async () => {
+  const buffer = Buffer.from([0xff, 0xd8, 0xff]);
+  const solicitudes = [];
+  const controller = new ChanchitosController({
+    obtenerImagen: async (...args) => {
+      solicitudes.push(args);
+      if (args[1] === '4') throw new Error('IMAGEN_CHANCHITO_NO_DISPONIBLE');
+      return { buffer, mime: 'image/jpeg' };
+    },
+  }, {});
+
+  for (const posicion of ['1', '2', '3']) {
+    const headers = {};
+    const response = {
+      setHeader: (name, value) => { headers[name] = value; },
+      send: (body) => { response.body = body; return body; },
+      status: (code) => { response.statusCode = code; return response; },
+    };
+    await controller.verImagen({ params: { idMonitoreo: '440', posicion } }, response);
+    assert.equal(response.body, buffer);
+    assert.equal(headers['Content-Type'], 'image/jpeg');
+    assert.equal(headers['Content-Length'], buffer.length);
+    assert.equal(headers['Content-Disposition'], 'inline');
+    assert.equal(headers['X-Content-Type-Options'], 'nosniff');
+  }
+
+  const noDisponible = {
+    status: (code) => { noDisponible.statusCode = code; return noDisponible; },
+    send: (body) => { noDisponible.body = body; return body; },
+  };
+  await controller.verImagen({ params: { idMonitoreo: '440', posicion: '4' } }, noDisponible);
+  assert.equal(noDisponible.statusCode, 404);
+  assert.match(noDisponible.body, /Imagen no disponible/);
+  assert.deepEqual(solicitudes.map((args) => args[1]), ['1', '2', '3', '4']);
+});
+
 test('el detalle parcial reutiliza obtenerDetalle y renderiza solo el fragmento', async () => {
   const llamadas = [];
   const controller = new ChanchitosController({

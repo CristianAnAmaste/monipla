@@ -42,7 +42,7 @@
 <div id="chanchitos-combos-error" class="alert" role="alert" hidden></div>
 
 <section class="form-panel">
-  <form id="chanchitos-form" class="form form-grid" action="/chanchitos" method="POST" autocomplete="off">
+  <form id="chanchitos-form" class="form form-grid" action="/chanchitos" method="POST" autocomplete="off" enctype="multipart/form-data">
     <div class="form-group-full monitoreo-ubicacion-grid">
       <div class="form-group">
         <label for="genFundo">Fundo</label>
@@ -88,7 +88,7 @@
       </div>
 
       <div class="form-group">
-        <label for="idEstadoFenologico">Estado fenologico</label>
+        <label for="idEstadoFenologico">Estado fenológico</label>
         <select id="idEstadoFenologico" name="idEstadoFenologico" required>
           <option value="">Seleccione un estado fenologico</option>
           <% opciones.estadosFenologicos.forEach((item) => { %>
@@ -113,39 +113,58 @@
       <textarea id="observaciones" name="observaciones" rows="4" placeholder="Ingrese observaciones relevantes"><%= values.observaciones %></textarea>
     </div>
 
-    <div class="form-group-full data-panel">
-      <h2>Matriz de monitoreo</h2>
-      <table>
+    <div class="form-group form-group-full chanchitos-evidence-section">
+      <div>
+        <label for="imagenes">Imágenes de evidencia (opcional)</label>
+        <small id="imagenes-ayuda">JPG, PNG o WebP · Máximo 10 MB por imagen.</small>
+      </div>
+      <input id="imagenes" class="chanchitos-image-input" name="imagenes" type="file" accept="image/jpeg,image/png,image/webp" multiple aria-describedby="imagenes-ayuda imagenes-error" tabindex="-1">
+      <p id="imagenes-error" class="chanchitos-image-error" role="alert" hidden></p>
+      <div id="imagenes-cards" class="chanchitos-image-cards" aria-live="polite">
+        <% [1, 2, 3].forEach((numero) => { %>
+          <article class="chanchitos-image-card" data-slot="<%= numero - 1 %>">
+            <header><strong>Evidencia <%= numero %></strong></header>
+            <div class="chanchitos-image-preview" data-preview aria-label="Vista previa de evidencia <%= numero %>">
+              <span data-placeholder>Sin imagen seleccionada</span>
+              <img data-image alt="" hidden>
+            </div>
+            <p class="chanchitos-image-name" data-name>Sin archivo seleccionado</p>
+            <p class="chanchitos-image-help">JPG, PNG o WebP · Máximo 10 MB</p>
+            <div class="chanchitos-image-actions">
+              <button class="button button-secondary" type="button" data-image-action="select" aria-label="Seleccionar evidencia <%= numero %>">Seleccionar</button>
+              <button class="button button-secondary" type="button" data-image-action="change" aria-label="Cambiar evidencia <%= numero %>" hidden>Cambiar</button>
+              <button class="button button-secondary" type="button" data-image-action="remove" aria-label="Quitar evidencia <%= numero %>" hidden>Quitar</button>
+            </div>
+          </article>
+        <% }) %>
+      </div>
+    </div>
+
+    <div class="form-group-full data-panel chanchitos-matrix-panel">
+      <h2>Matriz de presión</h2>
+      <div class="table-wrap">
+      <table class="chanchitos-matrix-table">
         <thead>
           <tr>
-            <th>Estado</th>
-            <th>Base Corteza</th>
-            <th>Base Brote</th>
-            <th>Hoja</th>
-            <th>Racimo</th>
+            <th>Posición</th>
+            <th>Ovisaco</th>
+            <th>Ninfa</th>
+            <th>Adulto</th>
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <th scope="row">Ovisaco</th>
-            <% [1, 2, 3, 4].forEach((posicion) => { %>
-              <td><input name="cantidad_1_<%= posicion %>" type="number" min="0" max="2147483647" step="1" value="<%= values[`cantidad_1_${posicion}`] %>"></td>
-            <% }) %>
-          </tr>
-          <tr>
-            <th scope="row">Ninfa</th>
-            <% [1, 2, 3, 4].forEach((posicion) => { %>
-              <td><input name="cantidad_2_<%= posicion %>" type="number" min="0" max="2147483647" step="1" value="<%= values[`cantidad_2_${posicion}`] %>"></td>
-            <% }) %>
-          </tr>
-          <tr>
-            <th scope="row">Adulto</th>
-            <% [1, 2, 3, 4].forEach((posicion) => { %>
-              <td><input name="cantidad_3_<%= posicion %>" type="number" min="0" max="2147483647" step="1" value="<%= values[`cantidad_3_${posicion}`] %>"></td>
-            <% }) %>
-          </tr>
+          <% const posiciones = [{ id: 1, nombre: 'Bajo corteza' }, { id: 2, nombre: 'Base de brote' }, { id: 3, nombre: 'Hoja' }, { id: 4, nombre: 'Racimo' }]; %>
+          <% [1, 2, 3, 4].forEach((posicion) => { %>
+            <tr>
+              <th scope="row"><%= posiciones[posicion - 1].nombre %></th>
+              <% [1, 2, 3].forEach((estado) => { %>
+                <td><input name="cantidad_<%= estado %>_<%= posicion %>" type="number" min="0" max="2147483647" step="1" inputmode="numeric" value="<%= values[`cantidad_${estado}_${posicion}`] %>"></td>
+              <% }) %>
+            </tr>
+          <% }) %>
         </tbody>
       </table>
+      </div>
     </div>
 
     <div class="form-actions">
