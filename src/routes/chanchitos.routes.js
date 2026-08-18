@@ -31,6 +31,7 @@ router.post('/chanchitos', ensureAuthenticated, recibirImagenes, chanchitosContr
 router.get('/chanchitos/pdf/general', ensureAuthenticated, chanchitosController.descargarPdfGeneral);
 router.get('/chanchitos/historial', ensureAuthenticated, chanchitosController.mostrarHistorial);
 router.post('/chanchitos/:id/eliminar', ensureAuthenticated, ensureAdmin, chanchitosController.eliminar);
+router.get('/chanchitos/:idMonitoreo/pdf', ensureAuthenticated, chanchitosController.descargarPdfIndividual);
 router.get('/chanchitos/:id/detalle-parcial', ensureAuthenticated, chanchitosController.mostrarDetalleParcial);
 router.get('/chanchitos/:idMonitoreo/imagenes/:posicion', ensureAuthenticated, chanchitosController.verImagen);
 router.get('/chanchitos/:id', ensureAuthenticated, chanchitosController.mostrarDetalle);

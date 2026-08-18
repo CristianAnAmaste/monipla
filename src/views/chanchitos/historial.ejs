@@ -78,6 +78,7 @@
         <td data-label="Acción">
           <div class="historial-actions">
             <button class="button button-secondary button-small" type="button" data-action="toggle-detalle" data-id-monitoreo="<%= registro.idMonitoreo %>" aria-expanded="false">Ver detalle</button>
+            <a class="button button-secondary button-small" href="/chanchitos/<%= registro.idMonitoreo %>/pdf">PDF</a>
             <% if (puedeEliminar) { %>
               <button
                 class="button button-danger button-small"

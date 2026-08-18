@@ -688,6 +688,29 @@ class ChanchitosRepository {
     return Buffer.isBuffer(imagen) && imagen.length > 0 ? imagen : null;
   }
 
+  async obtenerImagenesMonitoreoChanchitos(idMonitoreo) {
+    const request = await this.createRequest();
+    const result = await request
+      .input('idMonitoreo', this.sql.Int, idMonitoreo)
+      .query(`
+        SELECT
+          imagenmonitoreo AS imagen_1,
+          seg_imagenmonitoreo AS imagen_2,
+          terc_imagenmonitoreo AS imagen_3
+        FROM dbo.MONI_CABECERAMONITOREO
+        WHERE id_monitoreo = @idMonitoreo
+      `);
+    const row = result.recordset && result.recordset[0];
+
+    if (!row) {
+      return [];
+    }
+
+    return [1, 2, 3]
+      .map((posicion) => ({ posicion, buffer: row[`imagen_${posicion}`] }))
+      .filter((imagen) => Buffer.isBuffer(imagen.buffer) && imagen.buffer.length > 0);
+  }
+
   crearRequestHistorial(pool, filtros) {
     return pool.request()
       .input('fechaDesde', this.sql.Date, filtros.fechaDesde || null)

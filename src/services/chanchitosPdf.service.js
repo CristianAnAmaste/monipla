@@ -16,6 +16,12 @@ const POSICIONES = new Map([
   [3, 'Hoja'],
   [4, 'Racimo'],
 ]);
+const POSICIONES_DETALLE = new Map([
+  [1, 'Bajo corteza'],
+  [2, 'Base de brote'],
+  [3, 'Hoja'],
+  [4, 'Racimo'],
+]);
 const COLORS = {
   primary: '#164d36',
   soft: '#edf6f0',
@@ -72,6 +78,326 @@ class ChanchitosPdfService {
         totalMs: tiempoConsultaMs + tiempoAgrupacionMs + tiempoRenderMs,
       },
     };
+  }
+
+  async generarInformeIndividual(detalle, generatedAt = new Date()) {
+    const idMonitoreo = this.normalizarId(detalle && detalle.idMonitoreo);
+
+    if (!idMonitoreo) {
+      throw new Error('CHANCHITO_NO_EXISTE');
+    }
+
+    const matriz = this.construirMatrizIndividual(detalle);
+    const buffer = await this.generarPdfIndividual(detalle, matriz, generatedAt);
+    const fecha = String(detalle.fechaMonitoreo || '').replace(/[^0-9]/g, '') || this.fechaArchivo(generatedAt);
+
+    return {
+      filename: `monitoreo-chanchitos-${idMonitoreo}-${fecha}.pdf`,
+      buffer,
+    };
+  }
+
+  generarPdfIndividual(detalle, matriz, generatedAt) {
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({
+        size: 'LETTER',
+        margins: { top: 38, right: 38, bottom: 46, left: 38 },
+        bufferPages: true,
+        info: {
+          Title: `Monitoreo de Chanchitos #${detalle.idMonitoreo}`,
+          Author: 'MONIPLA',
+          Subject: 'Informe individual de monitoreo de Chanchitos',
+        },
+      });
+      const chunks = [];
+
+      doc.on('data', (chunk) => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      Promise.resolve()
+        .then(() => {
+          this.dibujarEncabezadoIndividual(doc, detalle, generatedAt);
+          this.dibujarBloqueDatosIndividual(doc, 'Identificación', [
+            ['Fundo', detalle.fundo],
+            ['Productor / Campo', detalle.campo],
+            ['Variedad', detalle.variedad],
+            ['Cuartel', detalle.cuartel],
+            ['SDP', detalle.sdp],
+            ['CSG', detalle.csg],
+            ['Trazabilidad', detalle.trazabilidad],
+          ], detalle, generatedAt);
+          this.dibujarBloqueDatosIndividual(doc, 'Monitoreo', [
+            ['Cantidad de plantas', detalle.cantPlantas],
+            ['Estado fenológico', detalle.estadoFenologico],
+            ['Monitoreador', detalle.monitoreador],
+            ['Fecha del monitoreo', detalle.fechaMonitoreo],
+            ['Total de bichos', detalle.totalBichos],
+            ['Posiciones con detección', detalle.posicionesConDeteccion],
+          ], detalle, generatedAt);
+          this.dibujarBloqueDatosIndividual(doc, 'Agroclima', [
+            ['Estación', this.valorAgroclimaIndividual(detalle.agroclima && detalle.agroclima.estacion)],
+            ['Horas frío', this.valorAgroclimaIndividual(detalle.agroclima && detalle.agroclima.horasFrio)],
+            ['Días grado', this.valorAgroclimaIndividual(detalle.agroclima && detalle.agroclima.diasGrado)],
+            ['Fecha de corte', this.valorAgroclimaIndividual(detalle.agroclima && detalle.agroclima.fechaCorte)],
+          ], detalle, generatedAt);
+          this.dibujarObservacionesIndividual(doc, detalle, generatedAt);
+          this.dibujarMatrizIndividual(doc, matriz, detalle, generatedAt);
+          this.dibujarEvidenciasIndividual(doc, detalle.imagenes, detalle, generatedAt);
+          this.agregarPiesPagina(doc);
+        })
+        .then(() => doc.end())
+        .catch(reject);
+    });
+  }
+
+  dibujarEncabezadoIndividual(doc, detalle, generatedAt, compacto = false) {
+    const x = doc.page.margins.left;
+    const y = doc.y;
+    const width = this.anchoUtil(doc);
+    const logoWidth = 56;
+    const altura = compacto ? 42 : 64;
+
+    doc.save().roundedRect(x, y, width, altura, 4).fill(COLORS.soft).restore();
+
+    if (this.logoPath) {
+      try {
+        doc.image(this.logoPath, x + 9, y + 8, { fit: [logoWidth, compacto ? 25 : 38] });
+      } catch (_) {
+        // El informe sigue disponible aunque el logo no pueda leerse.
+      }
+    }
+
+    const titleX = this.logoPath ? x + logoWidth + 18 : x + 12;
+    doc.font('Helvetica-Bold').fontSize(compacto ? 10 : 15).fillColor(COLORS.primary)
+      .text('Monitoreo de Chanchitos', titleX, y + 9, { width: width - (titleX - x) - 12, lineBreak: false });
+    doc.font('Helvetica-Bold').fontSize(compacto ? 7.5 : 9).fillColor(COLORS.text)
+      .text(`MONIPLA | Monitoreo #${detalle.idMonitoreo} | Fecha: ${this.valor(detalle.fechaMonitoreo, '-')}`, titleX, y + (compacto ? 23 : 31), {
+        width: width - (titleX - x) - 12,
+        lineBreak: false,
+      });
+
+    if (!compacto) {
+      doc.font('Helvetica').fontSize(7.5).fillColor(COLORS.muted)
+        .text(`Generado: ${this.formatearFechaHora(generatedAt)}`, titleX, y + 45, {
+          width: width - (titleX - x) - 12,
+          lineBreak: false,
+        });
+    }
+
+    doc.y = y + altura + 7;
+  }
+
+  asegurarEspacioIndividual(doc, altura, detalle, generatedAt) {
+    if (this.hayEspacio(doc, altura)) return;
+    doc.addPage();
+    this.dibujarEncabezadoIndividual(doc, detalle, generatedAt, true);
+  }
+
+  alturaBloqueDatosIndividual(doc, campos) {
+    const columnWidth = (this.anchoUtil(doc) - 10) / 2;
+    let altura = 16;
+
+    for (let index = 0; index < campos.length; index += 2) {
+      const fila = campos.slice(index, index + 2);
+      const alturaFila = Math.max(...fila.map(([, value]) => (
+        18 + doc.font('Helvetica').fontSize(7.8).heightOfString(this.valor(value, '-'), { width: columnWidth - 12, lineGap: 0 })
+      )));
+      altura += alturaFila + 4;
+    }
+
+    return altura;
+  }
+
+  dibujarBloqueDatosIndividual(doc, titulo, campos, detalle, generatedAt) {
+    const x = doc.page.margins.left;
+    const width = this.anchoUtil(doc);
+    const gap = 10;
+    const columnWidth = (width - gap) / 2;
+    const altura = this.alturaBloqueDatosIndividual(doc, campos);
+    this.asegurarEspacioIndividual(doc, altura, detalle, generatedAt);
+
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(COLORS.primary)
+      .text(titulo, x, doc.y, { width, lineBreak: false });
+    let y = doc.y + 13;
+
+    for (let index = 0; index < campos.length; index += 2) {
+      const fila = campos.slice(index, index + 2);
+      const alturaFila = Math.max(...fila.map(([, value]) => (
+        18 + doc.font('Helvetica').fontSize(7.8).heightOfString(this.valor(value, '-'), { width: columnWidth - 12, lineGap: 0 })
+      )));
+
+      fila.forEach(([label, value], columnIndex) => {
+        const fieldX = x + (columnIndex * (columnWidth + gap));
+        doc.save().roundedRect(fieldX, y, columnWidth, alturaFila, 3).fill(COLORS.white)
+          .strokeColor(COLORS.line).lineWidth(0.5).stroke().restore();
+        doc.font('Helvetica-Bold').fontSize(6.6).fillColor(COLORS.muted)
+          .text(label, fieldX + 6, y + 4, { width: columnWidth - 12, lineBreak: false });
+        doc.font('Helvetica').fontSize(7.8).fillColor(COLORS.text)
+          .text(this.valor(value, '-'), fieldX + 6, y + 12, { width: columnWidth - 12, lineGap: 0 });
+      });
+      y += alturaFila + 4;
+    }
+
+    doc.y = y + 2;
+  }
+
+  dibujarObservacionesIndividual(doc, detalle, generatedAt) {
+    const x = doc.page.margins.left;
+    const width = this.anchoUtil(doc);
+    const observaciones = this.normalizarObservaciones(detalle.observaciones);
+    const altoTexto = doc.font('Helvetica').fontSize(8)
+      .heightOfString(observaciones, { width: width - 16, lineGap: 1 });
+    const altura = 27 + altoTexto;
+    this.asegurarEspacioIndividual(doc, altura, detalle, generatedAt);
+
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(COLORS.primary)
+      .text('Observaciones', x, doc.y, { width, lineBreak: false });
+    const y = doc.y + 13;
+    doc.save().roundedRect(x, y, width, altoTexto + 12, 3).fill(COLORS.white)
+      .strokeColor(COLORS.line).lineWidth(0.5).stroke().restore();
+    doc.font('Helvetica').fontSize(8).fillColor(COLORS.text)
+      .text(observaciones, x + 8, y + 6, { width: width - 16, lineGap: 1 });
+    doc.y = y + altoTexto + 15;
+  }
+
+  valorAgroclimaIndividual(value) {
+    return this.valor(value, 'Sin datos') === '-' ? 'Sin datos' : this.valor(value, 'Sin datos');
+  }
+
+  construirMatrizIndividual(detalle = {}) {
+    const estados = [1, 2, 3];
+
+    return [...POSICIONES_DETALLE.entries()].map(([idEstadoPosicion, posicion]) => ({
+      posicion,
+      celdas: estados.map((idEstadoMonitoreo) => {
+        const estado = (detalle.matriz || []).find((item) => Number(item.idEstadoMonitoreo) === idEstadoMonitoreo);
+        const celda = estado && (estado.posiciones || []).find((item) => Number(item.idEstadoPosicion) === idEstadoPosicion);
+        const cantidad = Number(celda && celda.cantidad || 0);
+        const resultado = this.presionService.clasificarPresion({
+          idEstadoMonitoreo,
+          idEstadoPosicion,
+          cantidad,
+          cantPlantas: detalle.cantPlantas,
+        });
+
+        return { cantidad, resultado };
+      }),
+    }));
+  }
+
+  dibujarMatrizIndividual(doc, matriz, detalle, generatedAt) {
+    const x = doc.page.margins.left;
+    const width = this.anchoUtil(doc);
+    const anchoPosicion = width * 0.35;
+    const anchoCelda = (width - anchoPosicion) / 3;
+    const widths = [anchoPosicion, anchoCelda, anchoCelda, anchoCelda];
+    const altura = 17 + 20 + (matriz.length * 30) + 20;
+    this.asegurarEspacioIndividual(doc, altura, detalle, generatedAt);
+
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(COLORS.primary)
+      .text('Matriz de presión', x, doc.y, { width, lineBreak: false });
+    let y = doc.y + 13;
+    this.dibujarFilaMatrizIndividual(doc, x, y, ['Posición', 'Ovisaco', 'Ninfa', 'Adulto'], widths, true);
+    y += 20;
+
+    matriz.forEach((fila, index) => {
+      this.dibujarFilaMatrizIndividual(doc, x, y, [fila.posicion, ...fila.celdas], widths, false, index);
+      y += 30;
+    });
+
+    doc.save().fillColor(COLORS.soft).rect(x, y, width, 20).fill()
+      .strokeColor(COLORS.line).lineWidth(0.5).rect(x, y, width, 20).stroke().restore();
+    doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.text)
+      .text(`Total general: ${this.valor(detalle.totalBichos, '0')}`, x + 7, y + 6, { width: width - 14, lineBreak: false });
+    doc.y = y + 25;
+  }
+
+  dibujarFilaMatrizIndividual(doc, x, y, values, widths, encabezado, rowIndex = 0) {
+    let cellX = x;
+    const alto = encabezado ? 20 : 30;
+
+    values.forEach((value, index) => {
+      const resultado = !encabezado && index > 0 ? value.resultado : null;
+      const fondo = encabezado
+        ? COLORS.primary
+        : index === 0
+          ? (rowIndex % 2 === 0 ? COLORS.white : COLORS.soft)
+          : resultado.color;
+      doc.save().fillColor(fondo).rect(cellX, y, widths[index], alto).fill()
+        .strokeColor(COLORS.line).lineWidth(0.5).rect(cellX, y, widths[index], alto).stroke().restore();
+
+      if (encabezado) {
+        doc.font('Helvetica-Bold').fontSize(7.5).fillColor(COLORS.white)
+          .text(value, cellX + 4, y + 6, { width: widths[index] - 8, align: index === 0 ? 'left' : 'center', lineBreak: false });
+      } else if (index === 0) {
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.text)
+          .text(value, cellX + 5, y + 10, { width: widths[index] - 10, lineBreak: false });
+      } else {
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(COLORS.text)
+          .text(String(value.cantidad), cellX + 4, y + 5, { width: widths[index] - 8, align: 'center', lineBreak: false });
+        doc.font('Helvetica').fontSize(6.2).fillColor(COLORS.text)
+          .text(value.resultado.etiqueta, cellX + 4, y + 16, { width: widths[index] - 8, align: 'center', lineBreak: false });
+      }
+      cellX += widths[index];
+    });
+  }
+
+  dibujarEvidenciasIndividual(doc, imagenes, detalle, generatedAt) {
+    const imagenesDisponibles = (Array.isArray(imagenes) ? imagenes : []).filter((imagen) => {
+      if (!Buffer.isBuffer(imagen.buffer) || imagen.buffer.length === 0) return false;
+      try {
+        doc.openImage(imagen.buffer);
+        return true;
+      } catch (error) {
+        console.warn('[MONIPLA][CHANCHITOS][PDF_INDIVIDUAL][IMAGEN_NO_COMPATIBLE]', {
+          idMonitoreo: detalle.idMonitoreo,
+          posicion: imagen.posicion,
+          error: error.message,
+        });
+        return false;
+      }
+    });
+
+    if (!imagenesDisponibles.length) return;
+
+    const x = doc.page.margins.left;
+    const width = this.anchoUtil(doc);
+    const cantidad = imagenesDisponibles.length;
+    const gap = 10;
+    const anchoImagen = cantidad === 1
+      ? Math.min(310, width)
+      : (width - (gap * (cantidad - 1))) / cantidad;
+    const altoImagen = cantidad === 1 ? 235 : cantidad === 2 ? 205 : 165;
+    doc.addPage();
+
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(COLORS.primary)
+      .text('Imágenes de evidencia', x, doc.y, { width, lineBreak: false });
+    const y = doc.y + 16;
+    const inicioX = cantidad === 1 ? x + ((width - anchoImagen) / 2) : x;
+
+    imagenesDisponibles.forEach((imagen, index) => {
+      const imageX = inicioX + (index * (anchoImagen + gap));
+      doc.save().roundedRect(imageX, y, anchoImagen, altoImagen, 3).fill(COLORS.white)
+        .strokeColor(COLORS.line).lineWidth(0.7).stroke().restore();
+      doc.font('Helvetica-Bold').fontSize(7.2).fillColor(COLORS.primary)
+        .text(`Evidencia ${imagen.posicion}`, imageX + 6, y + 6, { width: anchoImagen - 12, lineBreak: false });
+      try {
+        doc.image(imagen.buffer, imageX + 6, y + 19, {
+          fit: [anchoImagen - 12, altoImagen - 25],
+          align: 'center',
+          valign: 'center',
+        });
+      } catch (error) {
+        console.warn('[MONIPLA][CHANCHITOS][PDF_INDIVIDUAL][IMAGEN_NO_DISPONIBLE]', {
+          idMonitoreo: detalle.idMonitoreo,
+          posicion: imagen.posicion,
+          error: error.message,
+        });
+      }
+    });
+
+    doc.y = y + altoImagen + 7;
   }
 
   validarFiltros(filtros) {

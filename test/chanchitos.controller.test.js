@@ -34,6 +34,59 @@ test('la ruta del PDF general exige autenticacion', () => {
   assert.match(rutas, /router\.get\('\/chanchitos\/pdf\/general', ensureAuthenticated, chanchitosController\.descargarPdfGeneral\)/);
 });
 
+test('entrega el PDF individual de Chanchitos con headers seguros', async () => {
+  const llamadas = [];
+  const controller = new ChanchitosController({
+    obtenerDetalleParaPdf: async (idMonitoreo) => {
+      llamadas.push(idMonitoreo);
+      return { idMonitoreo: 440 };
+    },
+  }, {
+    generarInformeIndividual: async (detalle) => ({
+      filename: 'monitoreo-chanchitos-440-20260812.pdf',
+      buffer: Buffer.from('%PDF-individual'),
+      detalle,
+    }),
+  });
+  const headers = {};
+  const response = {
+    setHeader: (name, value) => { headers[name] = value; },
+    send: (body) => body,
+  };
+
+  const body = await controller.descargarPdfIndividual({ params: { idMonitoreo: '440' } }, response);
+
+  assert.equal(body.toString(), '%PDF-individual');
+  assert.deepEqual(llamadas, ['440']);
+  assert.equal(headers['Content-Type'], 'application/pdf');
+  assert.equal(headers['Content-Disposition'], 'attachment; filename="monitoreo-chanchitos-440-20260812.pdf"');
+  assert.equal(headers['X-Content-Type-Options'], 'nosniff');
+  assert.equal(headers['Cache-Control'], 'no-store');
+});
+
+test('el PDF individual controla ID invalido y monitoreo inexistente', async () => {
+  const controller = new ChanchitosController({
+    obtenerDetalleParaPdf: async () => { throw new Error('CHANCHITO_NO_EXISTE'); },
+  }, {});
+  const response = {
+    status(code) { this.statusCode = code; return this; },
+    render(view, data) { this.view = view; this.data = data; return data; },
+  };
+
+  await controller.descargarPdfIndividual({ params: { idMonitoreo: 'invalido' } }, response);
+
+  assert.equal(response.statusCode, 404);
+  assert.equal(response.view, 'layouts/main');
+  assert.match(response.data.pageMessage, /no existe/);
+});
+
+test('la ruta del PDF individual exige autenticacion antes de la ruta generica', () => {
+  const rutas = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'chanchitos.routes.js'), 'utf8');
+
+  assert.match(rutas, /router\.get\('\/chanchitos\/:idMonitoreo\/pdf', ensureAuthenticated, chanchitosController\.descargarPdfIndividual\)/);
+  assert.ok(rutas.indexOf("'/chanchitos/:idMonitoreo/pdf'") < rutas.indexOf("'/chanchitos/:id'"));
+});
+
 test('entrega las tres posiciones de imagen con headers seguros y responde 404 si no existe', async () => {
   const buffer = Buffer.from([0xff, 0xd8, 0xff]);
   const solicitudes = [];

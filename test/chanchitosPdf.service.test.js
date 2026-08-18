@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const sharp = require('sharp');
 const ChanchitosPdfService = require('../src/services/chanchitosPdf.service');
 
 function filasDetalle(cabecera, cantidades = []) {
@@ -197,6 +198,87 @@ test('normaliza todos los filtros del historial antes de consultar el PDF', asyn
     genVariedad: 18, idCatalogoSdp: 44, idMonitoreador: 3,
     idEstadoFenologico: 7, deteccion: 'CON_DETECCION',
   }]);
+});
+
+function crearDetalleIndividual(imagenes = []) {
+  const cantidades = [
+    [1, 2, 3, 4],
+    [5, 6, 7, 8],
+    [9, 10, 11, 12],
+  ];
+
+  return {
+    idMonitoreo: 440,
+    fechaMonitoreo: '2026-08-12',
+    fundo: 'Fundo PDF',
+    campo: 'Campo PDF',
+    variedad: 'Variedad PDF',
+    cuartel: 'A-1',
+    sdp: 'SDP-1',
+    csg: 'CSG-1',
+    trazabilidad: 'TR-1',
+    cantPlantas: 12,
+    estadoFenologico: 'Pinta',
+    monitoreador: 'Monitoreador PDF',
+    totalBichos: 78,
+    posicionesConDeteccion: 12,
+    observaciones: '',
+    agroclima: {
+      estacion: 'Estacion PDF',
+      horasFrio: '431,53',
+      diasGrado: '19,61',
+      fechaCorte: '2026-08-12',
+    },
+    matriz: [1, 2, 3].map((idEstadoMonitoreo, estadoIndex) => ({
+      idEstadoMonitoreo,
+      posiciones: [1, 2, 3, 4].map((idEstadoPosicion, posicionIndex) => ({
+        idEstadoPosicion,
+        cantidad: cantidades[estadoIndex][posicionIndex],
+      })),
+    })),
+    imagenes,
+  };
+}
+
+function contarPaginasPdf(buffer) {
+  return (buffer.toString('latin1').match(/\/Type \/Page\b/g) || []).length;
+}
+
+test('genera PDF individual sin imagenes, conserva la matriz por posicion y muestra Sin observaciones', async () => {
+  const servicio = new ChanchitosPdfService({}, { logoPath: null });
+  const detalle = crearDetalleIndividual();
+  const matriz = servicio.construirMatrizIndividual(detalle);
+  const reporte = await servicio.generarInformeIndividual(detalle, new Date('2026-08-12T12:00:00Z'));
+
+  assert.deepEqual(matriz.map((fila) => [fila.posicion, ...fila.celdas.map((celda) => celda.cantidad)]), [
+    ['Bajo corteza', 1, 5, 9],
+    ['Base de brote', 2, 6, 10],
+    ['Hoja', 3, 7, 11],
+    ['Racimo', 4, 8, 12],
+  ]);
+  assert.equal(servicio.normalizarObservaciones(detalle.observaciones), 'Sin observaciones');
+  assert.equal(reporte.buffer.subarray(0, 5).toString(), '%PDF-');
+  assert.equal(contarPaginasPdf(reporte.buffer), 1);
+  assert.equal(reporte.filename, 'monitoreo-chanchitos-440-20260812.pdf');
+});
+
+test('genera PDF individual con una y tres imagenes JPEG sin alterar los buffers', async () => {
+  const servicio = new ChanchitosPdfService({}, { logoPath: null });
+  const imagen = await sharp({
+    create: { width: 32, height: 24, channels: 3, background: '#24745a' },
+  }).jpeg().toBuffer();
+
+  for (const cantidad of [1, 3]) {
+    const imagenes = Array.from({ length: cantidad }, (_, index) => ({
+      posicion: index + 1,
+      buffer: imagen,
+    }));
+    const reporte = await servicio.generarInformeIndividual(crearDetalleIndividual(imagenes));
+
+    assert.equal(reporte.buffer.subarray(0, 5).toString(), '%PDF-');
+    assert.equal(contarPaginasPdf(reporte.buffer), 2);
+    assert.equal(imagenes.every((item) => item.buffer === imagen), true);
+  }
 });
 
 test('agrupa una cabecera unica y anexa los detalles desde el segundo resultset', () => {

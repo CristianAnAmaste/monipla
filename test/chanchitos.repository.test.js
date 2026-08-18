@@ -556,6 +556,21 @@ test('el historial de Chanchitos no selecciona los binarios de imagen', () => {
   assert.doesNotMatch(bloque[0], /imagenmonitoreo|seg_imagenmonitoreo|terc_imagenmonitoreo/);
 });
 
+test('la consulta exclusiva del PDF recupera las tres evidencias por un unico id parametrizado', () => {
+  const contenido = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'repositories', 'chanchitos.repository.js'),
+    'utf8'
+  );
+  const bloque = contenido.match(/async obtenerImagenesMonitoreoChanchitos\([\s\S]*?\n\s*crearRequestHistorial/);
+
+  assert.ok(bloque);
+  assert.match(bloque[0], /imagenmonitoreo AS imagen_1/);
+  assert.match(bloque[0], /seg_imagenmonitoreo AS imagen_2/);
+  assert.match(bloque[0], /terc_imagenmonitoreo AS imagen_3/);
+  assert.match(bloque[0], /WHERE id_monitoreo = @idMonitoreo/);
+  assert.match(bloque[0], /\.input\('idMonitoreo', this\.sql\.Int, idMonitoreo\)/);
+});
+
 test('elimina Chanchitos en transaccion: bloquea, elimina detalles y luego cabecera', async () => {
   const { repository, state } = crearRepositoryEliminacion();
   const resultado = await repository.eliminarMonitoreoTransaccional(440);

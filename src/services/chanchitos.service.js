@@ -264,6 +264,22 @@ class ChanchitosService {
     return detalle;
   }
 
+  async obtenerDetalleParaPdf(idMonitoreo) {
+    const id = this.normalizarId(idMonitoreo);
+
+    if (!id) {
+      throw new Error('CHANCHITO_NO_EXISTE');
+    }
+
+    const detalle = await this.obtenerDetalle(id);
+    const imagenes = await this.chanchitosRepository.obtenerImagenesMonitoreoChanchitos(id);
+
+    return {
+      ...detalle,
+      imagenes,
+    };
+  }
+
   async obtenerImagen(idMonitoreo, posicion) {
     const id = this.normalizarId(idMonitoreo);
     const posicionNormalizada = Number.parseInt(posicion, 10);
