@@ -13,8 +13,12 @@ router.post(
   chanchitosRoutes.recibirImagenes,
   reactAppController.crearMonitoreoChanchitos,
 );
+router.get('/app/api/chanchitos/historial', ensureApiAuthenticated, reactAppController.obtenerHistorialChanchitos);
+router.get('/app/api/chanchitos/:id/detalle', ensureApiAuthenticated, reactAppController.obtenerDetalleChanchitos);
+router.delete('/app/api/chanchitos/:id', ensureApiAuthenticated, reactAppController.eliminarMonitoreoChanchitos);
 router.get('/app/bootstrap', ensureApiAuthenticated, reactAppController.bootstrap);
 router.get('/app/chanchitos/nuevo', ensureAuthenticated, reactAppController.index);
+router.get('/app/chanchitos/historial', ensureAuthenticated, reactAppController.index);
 router.get('/app', ensureAuthenticated, reactAppController.index);
 
 module.exports = router;

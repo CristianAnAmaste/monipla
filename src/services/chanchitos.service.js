@@ -2,6 +2,7 @@ const ChanchitosRepository = require('../repositories/chanchitos.repository');
 const CatalogoSdpService = require('./catalogoSdp.service');
 const AgroclimaMoniplaService = require('./agroclimaMonipla.service');
 const ChanchitosImagenService = require('./chanchitosImagen.service');
+const ChanchitosPresionService = require('./chanchitosPresion.service');
 const { performance } = require('node:perf_hooks');
 
 const MAX_INT = 2147483647;
@@ -20,12 +21,14 @@ class ChanchitosService {
     chanchitosRepository = null,
     catalogoSdpService = new CatalogoSdpService(),
     agroclimaService = new AgroclimaMoniplaService(),
-    chanchitosImagenService = new ChanchitosImagenService()
+    chanchitosImagenService = new ChanchitosImagenService(),
+    chanchitosPresionService = new ChanchitosPresionService()
   ) {
     this.chanchitosRepository = chanchitosRepository || new ChanchitosRepository();
     this.catalogoSdpService = catalogoSdpService;
     this.agroclimaService = agroclimaService;
     this.chanchitosImagenService = chanchitosImagenService;
+    this.chanchitosPresionService = chanchitosPresionService;
   }
 
   async getFormularioData(values = this.getValoresIniciales()) {
@@ -250,10 +253,20 @@ class ChanchitosService {
       matriz: ESTADOS.map((idEstadoMonitoreo) => ({
         idEstadoMonitoreo,
         nombre: ({ 1: 'Ovisaco', 2: 'Ninfa', 3: 'Adulto' })[idEstadoMonitoreo],
-        posiciones: POSICIONES.map((idEstadoPosicion) => ({
-          idEstadoPosicion,
-          cantidad: cantidades.get(`${idEstadoMonitoreo}-${idEstadoPosicion}`) || 0,
-        })),
+        posiciones: POSICIONES.map((idEstadoPosicion) => {
+          const cantidad = cantidades.get(`${idEstadoMonitoreo}-${idEstadoPosicion}`) || 0;
+
+          return {
+            idEstadoPosicion,
+            cantidad,
+            clasificacion: this.chanchitosPresionService.clasificarPresion({
+              idEstadoMonitoreo,
+              idEstadoPosicion,
+              cantidad,
+              cantPlantas: cabecera.cant_plantas,
+            }),
+          };
+        }),
       })),
     };
     console.info('[MONIPLA][CHANCHITOS][DETALLE][PERF]', {

@@ -18,6 +18,28 @@ export function guardarMonitoreoChanchitos(values, images = []) {
   });
 }
 
+export function obtenerHistorialChanchitos(filters = {}, signal) {
+  const query = new URLSearchParams();
+  [
+    'fechaDesde', 'fechaHasta', 'genFundo', 'genCampo', 'genVariedad',
+    'idCatalogoSdp', 'idMonitoreador', 'idEstadoFenologico', 'deteccion', 'pagina', 'pageSize',
+  ].forEach((key) => {
+    if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+      query.set(key, filters[key]);
+    }
+  });
+  const serialized = query.toString();
+  return requestJson(`/app/api/chanchitos/historial${serialized ? `?${serialized}` : ''}`, { signal });
+}
+
+export function obtenerDetalleChanchitos(idMonitoreo, signal) {
+  return requestJson(`/app/api/chanchitos/${idMonitoreo}/detalle`, { signal });
+}
+
+export function eliminarMonitoreoChanchitos(idMonitoreo) {
+  return requestJson(`/app/api/chanchitos/${idMonitoreo}`, { method: 'DELETE' });
+}
+
 export function obtenerCampos(genFundo, signal) {
   return requestJson(`/monitoreos/api/campos/${encodeURIComponent(genFundo)}`, { signal });
 }

@@ -3,6 +3,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import AppShell from './components/layout/AppShell';
 import DashboardPage from './pages/DashboardPage';
 import NuevoMonitoreoChanchitosPage from './pages/chanchitos/NuevoMonitoreoChanchitosPage';
+import ChanchitosHistoryPage from './pages/chanchitos/ChanchitosHistoryPage';
 
 function App() {
   const location = useLocation();
@@ -81,6 +82,7 @@ function App() {
       <Routes>
         <Route path="/app" element={<DashboardPage user={user} menu={menu} />} />
         <Route path="/app/chanchitos/nuevo" element={<NuevoMonitoreoChanchitosPage />} />
+        <Route path="/app/chanchitos/historial" element={<ChanchitosHistoryPage />} />
         <Route path="/" element={<Navigate to="/app" replace />} />
         <Route path="*" element={<Navigate to="/app" replace />} />
       </Routes>

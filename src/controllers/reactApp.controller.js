@@ -19,6 +19,9 @@ class ReactAppController {
     this.bootstrap = this.bootstrap.bind(this);
     this.obtenerFormularioChanchitos = this.obtenerFormularioChanchitos.bind(this);
     this.crearMonitoreoChanchitos = this.crearMonitoreoChanchitos.bind(this);
+    this.obtenerHistorialChanchitos = this.obtenerHistorialChanchitos.bind(this);
+    this.obtenerDetalleChanchitos = this.obtenerDetalleChanchitos.bind(this);
+    this.eliminarMonitoreoChanchitos = this.eliminarMonitoreoChanchitos.bind(this);
   }
 
   index(req, res) {
@@ -97,6 +100,97 @@ class ReactAppController {
       return res.status(status).json({
         success: false,
         message: messages[status],
+      });
+    }
+  }
+
+  async obtenerHistorialChanchitos(req, res) {
+    try {
+      const result = await this.chanchitosService.obtenerHistorial(req.query || {});
+
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          errors: result.errors || [],
+          data: {
+            values: result.values,
+            opciones: result.opciones,
+            resumen: result.resumen,
+            paginacion: result.paginacion,
+          },
+        });
+      }
+
+      return res.json({
+        success: true,
+        data: {
+          ...result,
+          puedeEliminar: req.session.usuario?.rol === 'admin',
+        },
+      });
+    } catch (error) {
+      console.error('[MONIPLA][REACT][CHANCHITOS][HISTORIAL][ERROR]', error);
+      return res.status(500).json({
+        success: false,
+        message: 'No fue posible cargar el historial de Chanchito Blanco.',
+      });
+    }
+  }
+
+  async obtenerDetalleChanchitos(req, res) {
+    if (!/^\d+$/.test(String(req.params.id || '')) || Number(req.params.id) <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'El identificador del monitoreo no es válido.',
+      });
+    }
+
+    try {
+      const detalle = await this.chanchitosService.obtenerDetalle(req.params.id);
+      return res.json({ success: true, data: detalle });
+    } catch (error) {
+      const status = error.message === 'CHANCHITO_NO_EXISTE' ? 404 : 500;
+      console.error('[MONIPLA][REACT][CHANCHITOS][DETALLE][ERROR]', {
+        idMonitoreo: req.params.id,
+        error: error.message,
+      });
+      return res.status(status).json({
+        success: false,
+        message: status === 404
+          ? 'El monitoreo de Chanchito Blanco solicitado no existe.'
+          : 'No fue posible cargar el detalle del monitoreo.',
+      });
+    }
+  }
+
+  async eliminarMonitoreoChanchitos(req, res) {
+    try {
+      const result = await this.chanchitosService.eliminarMonitoreo(
+        req.params.id,
+        req.session.usuario,
+      );
+
+      if (result.success) {
+        return res.json({ success: true, data: result });
+      }
+
+      const responses = {
+        ID_INVALIDO: [400, 'El identificador del monitoreo no es válido.'],
+        NO_AUTORIZADO: [403, 'No tiene permisos para eliminar monitoreos.'],
+        CHANCHITO_NO_EXISTE: [404, 'El monitoreo seleccionado no existe.'],
+        CHANCHITO_CON_IMAGENES: [409, 'No fue posible eliminar el monitoreo porque tiene imágenes asociadas.'],
+      };
+      const [status, message] = responses[result.reason] || [500, 'No fue posible eliminar el monitoreo.'];
+
+      return res.status(status).json({ success: false, error: result.reason, message });
+    } catch (error) {
+      console.error('[MONIPLA][REACT][CHANCHITOS][ELIMINAR][ERROR]', {
+        idMonitoreo: req.params.id,
+        error: error.message,
+      });
+      return res.status(500).json({
+        success: false,
+        message: 'No fue posible eliminar el monitoreo.',
       });
     }
   }

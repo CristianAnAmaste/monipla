@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { Leaf, LogOut } from 'lucide-react';
 import { getAuthorizedNavigation } from '../../config/navigation';
 import UserProfile from '../layout/UserProfile';
@@ -9,9 +10,9 @@ function Sidebar({ user, menu, currentPath, onNavigate, className = '' }) {
 
   return (
     <aside className={`flex h-full min-h-0 w-[270px] flex-col bg-[#173d26] text-white ${className}`} aria-label="Menú principal">
-      <a
+      <Link
         className="flex items-center gap-3 border-b border-[#315b39] px-5 py-5 text-white focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-[#a8d5a2]"
-        href="/home"
+        to="/app"
         onClick={onNavigate}
         aria-label="Monitoreo de Plagas, ir al inicio"
       >
@@ -19,7 +20,7 @@ function Sidebar({ user, menu, currentPath, onNavigate, className = '' }) {
           <Leaf className="size-5" strokeWidth={2.1} aria-hidden="true" />
         </span>
         <span className="min-w-0 text-sm font-semibold leading-tight tracking-wide">Monitoreo de Plagas</span>
-      </a>
+      </Link>
 
       <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto px-3 py-4" aria-label="Navegación principal">
         {navigation.home && <SidebarItem item={navigation.home} currentPath={currentPath} onNavigate={onNavigate} />}

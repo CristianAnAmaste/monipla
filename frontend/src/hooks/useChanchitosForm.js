@@ -2,7 +2,12 @@ import { useCallback, useRef, useState } from 'react';
 import { ApiClientError } from '../api/apiClient';
 import { guardarMonitoreoChanchitos } from '../api/chanchitosApi';
 import { mapServerErrors } from '../utils/formErrors';
-import { createInitialValues, validateChanchitosForm } from '../utils/chanchitosValidation';
+import {
+  CHANCHITOS_STEP_FIELDS,
+  createInitialValues,
+  validateChanchitosForm,
+  validateChanchitosStep,
+} from '../utils/chanchitosValidation';
 
 export function useChanchitosForm() {
   const [values, setValues] = useState(createInitialValues);
@@ -31,6 +36,27 @@ export function useChanchitosForm() {
     setSuccess(null);
   }, []);
 
+  const validateStep = useCallback((step) => {
+    const stepErrors = validateChanchitosStep(values, step);
+    const stepFields = CHANCHITOS_STEP_FIELDS[step] || [];
+
+    setFieldErrors((current) => {
+      const next = { ...current };
+      stepFields.forEach((field) => delete next[field]);
+      return { ...next, ...stepErrors };
+    });
+
+    if (Object.keys(stepErrors).length > 0) {
+      setGeneralErrors(['Revise los campos marcados antes de continuar.']);
+      setFirstInvalidField(Object.keys(stepErrors)[0]);
+      return { success: false, fieldErrors: stepErrors };
+    }
+
+    setGeneralErrors([]);
+    setFirstInvalidField(null);
+    return { success: true, fieldErrors: {} };
+  }, [values]);
+
   const submit = useCallback(async (images = []) => {
     if (submittingRef.current) {
       return { success: false, ignored: true };
@@ -41,7 +67,7 @@ export function useChanchitosForm() {
       setFieldErrors(clientErrors);
       setGeneralErrors(['Revise los campos marcados antes de guardar.']);
       setFirstInvalidField(Object.keys(clientErrors)[0]);
-      return { success: false, validation: true };
+      return { success: false, validation: true, fieldErrors: clientErrors };
     }
 
     setIsSubmitting(true);
@@ -60,7 +86,7 @@ export function useChanchitosForm() {
         setFieldErrors(mapped.fieldErrors);
         setGeneralErrors(mapped.generalErrors.length > 0 ? mapped.generalErrors : ['Revise los campos marcados antes de guardar.']);
         setFirstInvalidField(Object.keys(mapped.fieldErrors)[0] || null);
-        return { success: false, validation: true };
+        return { success: false, validation: true, fieldErrors: mapped.fieldErrors };
       }
 
       throw error;
@@ -70,11 +96,11 @@ export function useChanchitosForm() {
     }
   }, [values]);
 
-  const reset = useCallback(() => {
+  const reset = useCallback(({ preserveSuccess = false } = {}) => {
     setValues(createInitialValues());
     setFieldErrors({});
     setGeneralErrors([]);
-    setSuccess(null);
+    if (!preserveSuccess) setSuccess(null);
     setFirstInvalidField(null);
   }, []);
 
@@ -87,6 +113,7 @@ export function useChanchitosForm() {
     firstInvalidField,
     setFieldValue,
     setManyValues,
+    validateStep,
     submit,
     reset,
   };

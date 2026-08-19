@@ -97,7 +97,25 @@ test('el detalle completa las 12 combinaciones y conserva el total', async () =>
   assert.equal(detalle.matriz.length, 3);
   assert.equal(detalle.matriz.flatMap((fila) => fila.posiciones).length, 12);
   assert.equal(detalle.matriz[0].posiciones[0].cantidad, 3);
+  assert.equal(detalle.matriz[0].posiciones[0].clasificacion.etiqueta, 'Baja');
   assert.equal(detalle.totalBichos, 7);
+});
+
+test('el detalle prepara la clasificación con la combinación real de estado y posición', async () => {
+  const { servicio, repository } = crearServicio();
+  repository.obtenerDetalleChanchitos = async () => ({
+    cabecera: crearRegistro({ cant_plantas: 1 }),
+    detalles: [
+      { id_estadomonitoreo: 1, id_estadoposicion: 1, cantidad_bichos: 6 },
+      { id_estadomonitoreo: 3, id_estadoposicion: 4, cantidad_bichos: 3 },
+    ],
+  });
+
+  const detalle = await servicio.obtenerDetalle('440');
+  assert.equal(detalle.matriz[0].posiciones[0].cantidad, 6);
+  assert.equal(detalle.matriz[0].posiciones[0].clasificacion.etiqueta, 'Media');
+  assert.equal(detalle.matriz[2].posiciones[3].cantidad, 3);
+  assert.equal(detalle.matriz[2].posiciones[3].clasificacion.etiqueta, 'Alta');
 });
 
 test('el detalle conserva la trazabilidad historica resuelta por el repository', async () => {

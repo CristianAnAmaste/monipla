@@ -177,6 +177,67 @@ test('POST /app/api/chanchitos oculta errores inesperados del servicio', async (
   });
 });
 
+test('GET /app/api/chanchitos/historial reutiliza el servicio y entrega paginación JSON', async () => {
+  const historial = {
+    success: true,
+    values: { pagina: 2, pageSize: 25 },
+    opciones: { fundos: [] },
+    registros: [{ idMonitoreo: 91 }],
+    resumen: { totalMonitoreos: 26 },
+    paginacion: { pagina: 2, totalPaginas: 2, totalRegistros: 26 },
+  };
+  const calls = [];
+  const controller = new ReactAppController({
+    chanchitosService: { obtenerHistorial: async (query) => { calls.push(query); return historial; } },
+  });
+  const response = createResponse();
+
+  await controller.obtenerHistorialChanchitos({ query: { pagina: '2' }, session: { usuario: { rol: 'admin' } } }, response);
+
+  assert.deepEqual(calls, [{ pagina: '2' }]);
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.body.data.registros[0].idMonitoreo, 91);
+  assert.equal(response.body.data.puedeEliminar, true);
+});
+
+test('GET /app/api/chanchitos/:id/detalle carga el detalle bajo demanda y controla 400 y 404', async () => {
+  const controller = new ReactAppController({
+    chanchitosService: { obtenerDetalle: async (id) => {
+      if (id === '404') throw new Error('CHANCHITO_NO_EXISTE');
+      return { idMonitoreo: 91, matriz: [] };
+    } },
+  });
+  const validResponse = createResponse();
+  await controller.obtenerDetalleChanchitos({ params: { id: '91' } }, validResponse);
+  assert.deepEqual(validResponse.body, { success: true, data: { idMonitoreo: 91, matriz: [] } });
+
+  const invalidResponse = createResponse();
+  await controller.obtenerDetalleChanchitos({ params: { id: 'abc' } }, invalidResponse);
+  assert.equal(invalidResponse.statusCode, 400);
+
+  const missingResponse = createResponse();
+  await controller.obtenerDetalleChanchitos({ params: { id: '404' } }, missingResponse);
+  assert.equal(missingResponse.statusCode, 404);
+});
+
+test('DELETE /app/api/chanchitos reutiliza la autorización y eliminación existentes', async () => {
+  const controller = new ReactAppController({
+    chanchitosService: {
+      eliminarMonitoreo: async (id, user) => user.rol === 'admin'
+        ? { success: true, idMonitoreo: Number(id) }
+        : { success: false, reason: 'NO_AUTORIZADO' },
+    },
+  });
+  const adminResponse = createResponse();
+  await controller.eliminarMonitoreoChanchitos({ params: { id: '91' }, session: { usuario: { rol: 'admin' } } }, adminResponse);
+  assert.equal(adminResponse.statusCode, 200);
+  assert.equal(adminResponse.body.data.idMonitoreo, 91);
+
+  const userResponse = createResponse();
+  await controller.eliminarMonitoreoChanchitos({ params: { id: '91' }, session: { usuario: { rol: 'usuario' } } }, userResponse);
+  assert.equal(userResponse.statusCode, 403);
+});
+
 test('las rutas React usan los middlewares adecuados y /home conserva controller y vista', () => {
   const reactRoutes = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'reactApp.routes.js'), 'utf8');
   const homeRoutes = fs.readFileSync(path.join(__dirname, '..', 'src', 'routes', 'home.routes.js'), 'utf8');
@@ -184,7 +245,11 @@ test('las rutas React usan los middlewares adecuados y /home conserva controller
 
   assert.match(reactRoutes, /router\.get\('\/app', ensureAuthenticated, reactAppController\.index\)/);
   assert.match(reactRoutes, /router\.get\('\/app\/chanchitos\/nuevo', ensureAuthenticated, reactAppController\.index\)/);
+  assert.match(reactRoutes, /router\.get\('\/app\/chanchitos\/historial', ensureAuthenticated, reactAppController\.index\)/);
   assert.match(reactRoutes, /router\.get\('\/app\/api\/chanchitos\/nuevo', ensureApiAuthenticated, reactAppController\.obtenerFormularioChanchitos\)/);
+  assert.match(reactRoutes, /router\.get\('\/app\/api\/chanchitos\/historial', ensureApiAuthenticated, reactAppController\.obtenerHistorialChanchitos\)/);
+  assert.match(reactRoutes, /router\.get\('\/app\/api\/chanchitos\/:id\/detalle', ensureApiAuthenticated, reactAppController\.obtenerDetalleChanchitos\)/);
+  assert.match(reactRoutes, /router\.delete\('\/app\/api\/chanchitos\/:id', ensureApiAuthenticated, reactAppController\.eliminarMonitoreoChanchitos\)/);
   assert.match(reactRoutes, /chanchitosRoutes\.recibirImagenes/);
   assert.match(reactRoutes, /router\.post\([\s\S]*'\/app\/api\/chanchitos'[\s\S]*ensureApiAuthenticated[\s\S]*chanchitosRoutes\.recibirImagenes/);
   assert.match(reactRoutes, /router\.get\('\/app\/bootstrap', ensureApiAuthenticated, reactAppController\.bootstrap\)/);

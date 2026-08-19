@@ -13,6 +13,16 @@ export const POSICIONES_MONITOREO = [
   { id: 4, label: 'Racimo' },
 ];
 
+export const CHANCHITOS_STEP_FIELDS = Object.freeze({
+  1: ['genFundo', 'genCampo', 'genVariedad', 'idCatalogoSdp'],
+  2: ['fechaMonitoreo', 'idMonitoreador', 'idEstadoFenologico', 'cantPlantas'],
+  3: ESTADOS_MONITOREO.flatMap(({ id: estado }) => POSICIONES_MONITOREO.map(
+    ({ id: posicion }) => `cantidad_${estado}_${posicion}`
+  )),
+  4: [],
+  5: [],
+});
+
 export function createInitialValues() {
   const values = {
     genFundo: '',
@@ -74,4 +84,15 @@ export function validateChanchitosForm(values) {
   });
 
   return fieldErrors;
+}
+
+export function validateChanchitosStep(values, step) {
+  const fieldErrors = validateChanchitosForm(values);
+  const fields = CHANCHITOS_STEP_FIELDS[step] || [];
+
+  return Object.fromEntries(Object.entries(fieldErrors).filter(([field]) => fields.includes(field)));
+}
+
+export function getChanchitosStepForField(field) {
+  return Number(Object.entries(CHANCHITOS_STEP_FIELDS).find(([, fields]) => fields.includes(field))?.[0]) || null;
 }
