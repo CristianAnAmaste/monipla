@@ -1,4 +1,30 @@
-import { requestJson } from './apiClient';
+import { ApiClientError, requestJson } from './apiClient';
+
+const HISTORY_FILTER_KEYS = [
+  'fechaDesde', 'fechaHasta', 'genFundo', 'genCampo', 'genVariedad',
+  'idCatalogoSdp', 'idMonitoreador', 'idEstadoFenologico', 'deteccion',
+];
+const HISTORY_PAGINATION_KEYS = ['pagina', 'pageSize'];
+
+export function serializeChanchitosHistoryFilters(filters = {}, { includePagination = true } = {}) {
+  const query = new URLSearchParams();
+  const keys = includePagination
+    ? [...HISTORY_FILTER_KEYS, ...HISTORY_PAGINATION_KEYS]
+    : HISTORY_FILTER_KEYS;
+
+  keys.forEach((key) => {
+    if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
+      query.set(key, filters[key]);
+    }
+  });
+
+  return query.toString();
+}
+
+function getPdfFilename(contentDisposition) {
+  const match = contentDisposition?.match(/filename="?([^";]+)"?/i);
+  return match?.[1] || 'reporte-general-chanchitos.pdf';
+}
 
 export function obtenerFormularioChanchitos(signal) {
   return requestJson('/app/api/chanchitos/nuevo', { signal });
@@ -19,17 +45,38 @@ export function guardarMonitoreoChanchitos(values, images = []) {
 }
 
 export function obtenerHistorialChanchitos(filters = {}, signal) {
-  const query = new URLSearchParams();
-  [
-    'fechaDesde', 'fechaHasta', 'genFundo', 'genCampo', 'genVariedad',
-    'idCatalogoSdp', 'idMonitoreador', 'idEstadoFenologico', 'deteccion', 'pagina', 'pageSize',
-  ].forEach((key) => {
-    if (filters[key] !== undefined && filters[key] !== null && filters[key] !== '') {
-      query.set(key, filters[key]);
-    }
-  });
-  const serialized = query.toString();
+  const serialized = serializeChanchitosHistoryFilters(filters);
   return requestJson(`/app/api/chanchitos/historial${serialized ? `?${serialized}` : ''}`, { signal });
+}
+
+export async function descargarPdfGeneralChanchitos(filters = {}) {
+  const serialized = serializeChanchitosHistoryFilters(filters, { includePagination: false });
+  const response = await fetch(`/chanchitos/pdf/general${serialized ? `?${serialized}` : ''}`, {
+    credentials: 'include',
+    headers: { Accept: 'application/pdf' },
+  });
+  const contentType = response.headers.get('content-type') || '';
+
+  if (response.redirected && /\/login(?:[/?#]|$)/.test(response.url)) {
+    throw new ApiClientError(401, { message: 'La sesión expiró. Redirigiendo al inicio de sesión.' });
+  }
+  if (!response.ok || !contentType.includes('application/pdf')) {
+    throw new ApiClientError(response.status || 500, {
+      message: response.status === 403
+        ? 'No tiene permisos para generar este reporte.'
+        : 'No fue posible generar el PDF general de Chanchitos.',
+    });
+  }
+
+  const blob = await response.blob();
+  if (blob.size === 0) {
+    throw new ApiClientError(500, { message: 'No fue posible generar el PDF general de Chanchitos.' });
+  }
+
+  return {
+    blob,
+    filename: getPdfFilename(response.headers.get('content-disposition')),
+  };
 }
 
 export function obtenerDetalleChanchitos(idMonitoreo, signal) {
