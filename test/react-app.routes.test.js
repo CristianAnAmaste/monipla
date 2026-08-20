@@ -188,16 +188,40 @@ test('GET /app/api/chanchitos/historial reutiliza el servicio y entrega paginaci
   };
   const calls = [];
   const controller = new ReactAppController({
-    chanchitosService: { obtenerHistorial: async (query) => { calls.push(query); return historial; } },
+    chanchitosService: { obtenerHistorial: async (...args) => { calls.push(args); return historial; } },
   });
   const response = createResponse();
 
-  await controller.obtenerHistorialChanchitos({ query: { pagina: '2' }, session: { usuario: { rol: 'admin' } } }, response);
+  await controller.obtenerHistorialChanchitos({
+    query: { pagina: '2' },
+    headers: { 'x-request-id': 'react-chanchitos-historial-7' },
+    session: { usuario: { rol: 'admin' }, },
+  }, response);
 
-  assert.deepEqual(calls, [{ pagina: '2' }]);
+  assert.deepEqual(calls, [[{ pagina: '2' }, { requestId: 'react-chanchitos-historial-7' }]]);
   assert.equal(response.statusCode, 200);
   assert.equal(response.body.data.registros[0].idMonitoreo, 91);
   assert.equal(response.body.data.puedeEliminar, true);
+});
+
+test('GET /app/api/chanchitos/historial conserva parametros y tipos en la traza correlacionada', async () => {
+  const controller = new ReactAppController({
+    chanchitosService: { obtenerHistorial: async () => ({ success: true, opciones: {}, registros: [], resumen: {}, paginacion: {} }) },
+  });
+  const response = createResponse();
+
+  await controller.obtenerHistorialChanchitos({
+    query: { genFundo: '9', pagina: '1', pageSize: '10' },
+    headers: { 'x-request-id': 'historial-fundo-9' },
+    session: { usuario: { rol: 'usuario' } },
+  }, response);
+
+  assert.deepEqual(controller.describirParametrosHistorial({ genFundo: '9', pagina: '1', pageSize: '10' }), {
+    genFundo: { tipo: 'string', valor: '9' },
+    pagina: { tipo: 'string', valor: '1' },
+    pageSize: { tipo: 'string', valor: '10' },
+  });
+  assert.equal(response.statusCode, 200);
 });
 
 test('GET /app/api/chanchitos/:id/detalle carga el detalle bajo demanda y controla 400 y 404', async () => {

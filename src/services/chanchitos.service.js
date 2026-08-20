@@ -132,31 +132,60 @@ class ChanchitosService {
     }
   }
 
-  async obtenerHistorial(query = {}) {
+  async obtenerHistorial(query = {}, { requestId = null } = {}) {
     const inicioTotal = performance.now();
+    const requestIdSeguro = String(requestId || '').trim().slice(0, 120) || null;
     const values = this.normalizarFiltrosHistorial(query);
     const errors = this.validarFiltrosHistorial(values);
 
+    console.info('[MONIPLA][CHANCHITOS][HISTORIAL][START]', {
+      requestId: requestIdSeguro,
+      filtros: this.describirFiltrosHistorial(values),
+    });
+
     if (errors.length > 0) {
+      console.info('[MONIPLA][CHANCHITOS][HISTORIAL][INVALID]', { requestId: requestIdSeguro, errors });
       return this.crearResultadoHistorialInvalido(values, errors);
     }
 
-    const medir = async (nombre, operacion, metricas) => {
+    const medir = async (consulta, nombreMetrica, operacion, metricas) => {
       const inicio = performance.now();
-      const resultado = await operacion();
-      metricas[nombre] = Math.round(performance.now() - inicio);
-      return resultado;
+      console.info('[MONIPLA][CHANCHITOS][HISTORIAL][QUERY_START]', {
+        requestId: requestIdSeguro,
+        consulta,
+      });
+      try {
+        const resultado = await operacion();
+        metricas[nombreMetrica] = Math.round(performance.now() - inicio);
+        console.info('[MONIPLA][CHANCHITOS][HISTORIAL][QUERY_END]', {
+          requestId: requestIdSeguro,
+          consulta,
+          durationMs: metricas[nombreMetrica],
+        });
+        return resultado;
+      } catch (error) {
+        console.error('[MONIPLA][CHANCHITOS][HISTORIAL][QUERY_ERROR]', {
+          requestId: requestIdSeguro,
+          consulta,
+          durationMs: Math.round(performance.now() - inicio),
+          errorCode: error.code || null,
+          etapaTimeout: error.code === 'ETIMEOUT' ? consulta : null,
+          error: error.message,
+        });
+        throw error;
+      }
     };
     const metricas = {};
     const [resumen, opciones] = await Promise.all([
-      medir('resumenMs', () => this.chanchitosRepository.obtenerResumenHistorialChanchitos(values), metricas),
-      medir('opcionesMs', () => this.obtenerOpcionesHistorial(), metricas),
+      medir('resumen', 'resumenMs', () => this.chanchitosRepository.obtenerResumenHistorialChanchitos(values), metricas),
+      medir('opciones', 'opcionesMs', () => this.obtenerOpcionesHistorial(), metricas),
     ]);
     const totalRegistros = Number(resumen.total_registros || 0);
     const totalPaginas = Math.max(1, Math.ceil(totalRegistros / values.pageSize));
     const pagina = Math.min(values.pagina, totalPaginas);
     const filtros = { ...values, pagina };
     const registros = await medir(
+      'pagina',
       'paginaMs',
       () => this.chanchitosRepository.listarHistorialChanchitos(filtros, pagina, values.pageSize),
       metricas
@@ -165,7 +194,7 @@ class ChanchitosService {
     const registrosPreparados = registros.map((registro) => this.prepararRegistroHistorial(registro, opciones));
     metricas.preparacionMs = Math.max(0, Math.round(performance.now() - inicioPreparacion));
     metricas.totalMs = Math.round(performance.now() - inicioTotal);
-    console.info('[MONIPLA][CHANCHITOS][HISTORIAL][PERF]', metricas);
+    console.info('[MONIPLA][CHANCHITOS][HISTORIAL][PERF]', { requestId: requestIdSeguro, ...metricas });
 
     return {
       success: true,
@@ -528,6 +557,13 @@ class ChanchitosService {
     };
   }
 
+  describirFiltrosHistorial(filtros) {
+    return Object.fromEntries(Object.entries(filtros).map(([nombre, valor]) => [nombre, {
+      tipo: valor === null ? 'null' : typeof valor,
+      valor,
+    }]));
+  }
+
   validarFiltrosHistorial(filtros) {
     const errors = [];
 
@@ -573,6 +609,11 @@ class ChanchitosService {
     const totalBichos = Number(registro.total_bichos || 0);
     const horasFrio = this.formatearDecimal(registro.horas_frio_acumuladas);
     const diasGrado = this.formatearDecimal(registro.dias_grado_acumulados);
+    const indicador = horasFrio !== null
+      ? { tipo: 'HF', valor: horasFrio }
+      : diasGrado !== null
+        ? { tipo: 'DG', valor: diasGrado }
+        : null;
 
     return {
       idMonitoreo: registro.id_monitoreo,
@@ -596,7 +637,8 @@ class ChanchitosService {
         estacion: this.textoSeguro(registro.nombre_estacion_meteo),
         fechaCorte: this.formatearFecha(registro.fecha_corte_agroclima),
         observacion: this.textoSeguro(registro.agroclima_observacion),
-        tieneDatos: horasFrio !== null || diasGrado !== null,
+        indicador,
+        tieneDatos: indicador !== null,
       },
     };
   }

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Download, MoreVertical, Trash2 } from 'lucide-react';
 
-function HistoryRowActions({ record, canDelete, onDelete, onOpenPanel }) {
+function HistoryRowActions({ record, canDelete, onDelete }) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef(null);
   const triggerRef = useRef(null);
@@ -47,9 +47,6 @@ function HistoryRowActions({ record, canDelete, onDelete, onOpenPanel }) {
         <a role="menuitem" href={`/chanchitos/${record.idMonitoreo}/pdf`} onClick={closeMenu} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-[#35563b] hover:bg-[#f2f7f0] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#39744a]">
           <Download className="size-4" aria-hidden="true" />Descargar PDF individual
         </a>
-        <button type="button" role="menuitem" onClick={() => { closeMenu(); onOpenPanel(record.idMonitoreo); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium text-[#35563b] hover:bg-[#f2f7f0] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#39744a]">
-          Abrir panel experimental
-        </button>
         {canDelete && <button type="button" role="menuitem" onClick={() => { closeMenu(); onDelete(record); }} className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm font-medium text-[#9f3026] hover:bg-[#fff5f3] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#a43c31]">
           <Trash2 className="size-4" aria-hidden="true" />Eliminar monitoreo
         </button>}

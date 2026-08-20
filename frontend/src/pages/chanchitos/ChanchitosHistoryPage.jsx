@@ -4,7 +4,6 @@ import { Download, RefreshCw } from 'lucide-react';
 import { ApiClientError } from '../../api/apiClient';
 import { descargarPdfGeneralChanchitos, eliminarMonitoreoChanchitos, obtenerDetalleChanchitos, obtenerHistorialChanchitos } from '../../api/chanchitosApi';
 import ConfirmDeleteDialog from '../../components/chanchitos/ConfirmDeleteDialog';
-import ChanchitosDetailPanel from '../../components/chanchitos/ChanchitosDetailPanel';
 import HistoryFilters from '../../components/chanchitos/HistoryFilters';
 import HistoryTable from '../../components/chanchitos/HistoryTable';
 import { useChanchitosCatalogos } from '../../hooks/useChanchitosCatalogos';
@@ -31,13 +30,13 @@ function ChanchitosHistoryPage() {
   const [error, setError] = useState(null);
   const [notice, setNotice] = useState(null);
   const [openDetailId, setOpenDetailId] = useState(null);
-  const [panelDetailId, setPanelDetailId] = useState(null);
   const [detailsById, setDetailsById] = useState({});
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const catalogos = useChanchitosCatalogos();
   const historyControllerRef = useRef(null);
+  const historyRequestSequenceRef = useRef(0);
   const detailControllerRef = useRef(null);
   const detailRequestIdRef = useRef(null);
   const pdfRequestRef = useRef(false);
@@ -47,32 +46,38 @@ function ChanchitosHistoryPage() {
     detailControllerRef.current = null;
     detailRequestIdRef.current = null;
     setOpenDetailId(null);
-    setPanelDetailId(null);
   }, []);
 
   const loadHistory = useCallback(async (nextFilters) => {
+    const sequence = historyRequestSequenceRef.current + 1;
+    const requestId = `react-chanchitos-historial-${sequence}`;
+    historyRequestSequenceRef.current = sequence;
     historyControllerRef.current?.abort();
     closeOpenDetail();
     const controller = new AbortController();
     historyControllerRef.current = controller;
-    setHistory({ status: 'loading', data: null });
+    setHistory((current) => ({ status: 'loading', data: current.data }));
     setError(null);
     try {
-      const response = await obtenerHistorialChanchitos(nextFilters, controller.signal);
-      if (historyControllerRef.current !== controller) return null;
+      const response = await obtenerHistorialChanchitos(nextFilters, controller.signal, requestId);
+      if (historyRequestSequenceRef.current !== sequence || historyControllerRef.current !== controller) return null;
       setHistory({ status: 'ready', data: response.data });
       setFilters(response.data.values);
       return response.data;
     } catch (requestError) {
+      if (historyRequestSequenceRef.current !== sequence || historyControllerRef.current !== controller) return null;
       if (requestError.name === 'AbortError') return null;
-      if (historyControllerRef.current !== controller) return null;
       if (requestError instanceof ApiClientError && requestError.status === 401) {
         window.location.assign('/login');
         return null;
       }
-      setHistory({ status: 'error', data: null });
+      setHistory((current) => ({ status: 'error', data: current.data }));
       setError(getErrorMessage(requestError, 'No fue posible cargar el historial de Chanchito Blanco.'));
       return null;
+    } finally {
+      if (historyRequestSequenceRef.current === sequence && historyControllerRef.current === controller) {
+        historyControllerRef.current = null;
+      }
     }
   }, [closeOpenDetail]);
 
@@ -80,6 +85,7 @@ function ChanchitosHistoryPage() {
     const timer = window.setTimeout(() => { loadHistory(initialFilters); }, 0);
     return () => {
       window.clearTimeout(timer);
+      historyRequestSequenceRef.current += 1;
       historyControllerRef.current?.abort();
       detailControllerRef.current?.abort();
     };
@@ -205,18 +211,9 @@ function ChanchitosHistoryPage() {
       setOpenDetailId(null);
       return;
     }
-    setPanelDetailId(null);
     setOpenDetailId(idMonitoreo);
     loadDetail(idMonitoreo);
   };
-
-  const openDetailPanel = (idMonitoreo) => {
-    setOpenDetailId(null);
-    setPanelDetailId(idMonitoreo);
-    loadDetail(idMonitoreo);
-  };
-
-  const closeDetailPanel = useCallback(() => setPanelDetailId(null), []);
 
   const deleteMonitoreo = async () => {
     if (!deleteTarget || isDeleting) return;
@@ -252,9 +249,6 @@ function ChanchitosHistoryPage() {
   };
 
   const data = history.data;
-  const panelDetailState = panelDetailId
-    ? detailsById[panelDetailId] || { status: 'loading', data: null, error: null }
-    : null;
 
   return (
     <div className="mx-auto w-full max-w-[1440px]">
@@ -266,14 +260,13 @@ function ChanchitosHistoryPage() {
       {error && <div className="mb-5 rounded-lg border border-[#f2c8c2] bg-[#fff5f3] px-4 py-3 text-sm text-[#8e2e26]" role="alert">{error}</div>}
       {history.status === 'error' ? <section className="rounded-xl border border-[#dbe5da] bg-white p-6"><button type="button" onClick={() => loadHistory(filters)} className="inline-flex items-center gap-2 rounded-lg bg-[#2f713b] px-4 py-2 text-sm font-semibold text-white hover:bg-[#245c2f]"><RefreshCw className="size-4" aria-hidden="true" />Reintentar</button></section> : <>
         <HistoryFilters filters={filters} options={data?.opciones || {}} catalogs={catalogos.catalogs} loading={catalogos.loading} onChange={updateFilter} onFundoChange={handleFundoChange} onCampoChange={handleCampoChange} onVariedadChange={handleVariedadChange} onSubmit={submitFilters} onClear={clearFilters} />
-        {history.status === 'loading' ? <p className="mt-5 rounded-lg border border-[#dbe5da] bg-white px-4 py-3 text-sm text-[#617064]">Cargando historial…</p> : <section className="mt-5"><div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold text-[#1f2922]">Monitoreos encontrados</h2><p className="mt-1 text-sm text-[#617064]">{data.paginacion.totalRegistros} registros · Página {data.paginacion.pagina} de {data.paginacion.totalPaginas}</p></div><div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4"><span className="rounded-lg bg-white px-3 py-2 text-[#425347] shadow-sm"><strong>{data.resumen.totalMonitoreos}</strong> monitoreos</span><span className="rounded-lg bg-white px-3 py-2 text-[#425347] shadow-sm"><strong>{data.resumen.totalPlantas}</strong> plantas</span><span className="rounded-lg bg-white px-3 py-2 text-[#425347] shadow-sm"><strong>{data.resumen.totalBichos}</strong> bichos</span><span className="rounded-lg bg-white px-3 py-2 text-[#425347] shadow-sm"><strong>{data.resumen.monitoreosConDeteccion}</strong> con detección</span></div></div>
-          <HistoryTable records={data.registros} openDetailId={openDetailId} detailsById={detailsById} canDelete={data.puedeEliminar} onToggleDetail={toggleDetail} onDelete={setDeleteTarget} onOpenPanel={openDetailPanel} />
+        {history.status === 'loading' ? <p className="mt-5 rounded-lg border border-[#dbe5da] bg-white px-4 py-3 text-sm text-[#617064]">Cargando historial…</p> : <section className="mt-5"><div className="mb-4 flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-semibold text-[#1f2922]">Monitoreos encontrados</h2><p className="mt-1 text-sm text-[#617064]">{data.paginacion.totalRegistros} registros · Página {data.paginacion.pagina} de {data.paginacion.totalPaginas}</p></div><div className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4"><span className="rounded-lg bg-white px-3 py-2 text-[#425347] shadow-sm"><strong>{data.resumen.totalMonitoreos}</strong> monitoreos</span><span className="rounded-lg bg-white px-3 py-2 text-[#425347] shadow-sm"><strong>{data.resumen.totalPlantas}</strong> plantas</span><span className="rounded-lg bg-white px-3 py-2 text-[#425347] shadow-sm"><strong>{data.resumen.totalBichos}</strong> insectos</span><span className="rounded-lg bg-white px-3 py-2 text-[#425347] shadow-sm"><strong>{data.resumen.monitoreosConDeteccion}</strong> con detección</span></div></div>
+          <HistoryTable records={data.registros} openDetailId={openDetailId} detailsById={detailsById} canDelete={data.puedeEliminar} onToggleDetail={toggleDetail} onDelete={setDeleteTarget} />
           {data.registros.length > 0 && <div className="mt-5 flex justify-end"><label className="flex items-center gap-2 text-sm font-medium text-[#35563b]" htmlFor="history-page-size">Resultados por página<select id="history-page-size" value={filters.pageSize} onChange={handlePageSizeChange} className="min-h-10 rounded-lg border border-[#cbd9c8] bg-white px-3 text-sm text-[#1f2922] shadow-sm outline-none focus:border-[#39744a] focus-visible:ring-2 focus-visible:ring-[#a8d5a2]">{[10, 25, 50].map((size) => <option key={size} value={size}>{size}</option>)}</select></label></div>}
           {data.registros.length > 0 && <nav className="mt-5 flex items-center justify-between gap-3" aria-label="Paginación del historial"><button type="button" disabled={data.paginacion.pagina <= 1} onClick={() => loadHistory({ ...filters, pagina: data.paginacion.pagina - 1 })} className="rounded-lg border border-[#b8cbb8] px-4 py-2 text-sm font-semibold text-[#35563b] hover:bg-[#f2f7f0] disabled:cursor-not-allowed disabled:opacity-50">Anterior</button><span className="text-sm text-[#617064]">Página {data.paginacion.pagina} de {data.paginacion.totalPaginas}</span><button type="button" disabled={data.paginacion.pagina >= data.paginacion.totalPaginas} onClick={() => loadHistory({ ...filters, pagina: data.paginacion.pagina + 1 })} className="rounded-lg border border-[#b8cbb8] px-4 py-2 text-sm font-semibold text-[#35563b] hover:bg-[#f2f7f0] disabled:cursor-not-allowed disabled:opacity-50">Siguiente</button></nav>}
         </section>}
       </>}
       <ConfirmDeleteDialog record={deleteTarget} isDeleting={isDeleting} onCancel={() => { if (!isDeleting) setDeleteTarget(null); }} onConfirm={deleteMonitoreo} />
-      <ChanchitosDetailPanel isOpen={panelDetailId !== null} detailState={panelDetailState} onClose={closeDetailPanel} />
     </div>
   );
 }

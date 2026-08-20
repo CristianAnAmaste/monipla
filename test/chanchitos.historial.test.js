@@ -78,6 +78,93 @@ test('normaliza filtros, pagina solo despues de conocer el total y presenta hist
   assert.equal(llamadas.some(([nombre]) => nombre === 'consolidado'), false);
 });
 
+test('propaga genFundo tipado y filtros combinados al resumen y la pagina', async () => {
+  const { servicio, llamadas } = crearServicio();
+
+  await servicio.obtenerHistorial({
+    genFundo: '9',
+    genCampo: '18',
+    genVariedad: '27',
+    idMonitoreador: '4',
+    deteccion: 'CON_DETECCION',
+    pagina: '1',
+    pageSize: '10',
+  }, { requestId: 'historial-fundo-9' });
+
+  const resumen = llamadas.find(([nombre]) => nombre === 'resumen')[1];
+  const pagina = llamadas.find(([nombre]) => nombre === 'pagina')[1];
+  assert.deepEqual(resumen, {
+    fechaDesde: null,
+    fechaHasta: null,
+    genFundo: 9,
+    genCampo: 18,
+    genVariedad: 27,
+    idCatalogoSdp: null,
+    idMonitoreador: 4,
+    idEstadoFenologico: null,
+    deteccion: 'CON_DETECCION',
+    pagina: 1,
+    pageSize: 10,
+  });
+  assert.deepEqual(pagina, resumen);
+});
+
+test('prepara un unico indicador agroclimatico para el historial y el detalle', () => {
+  const { servicio } = crearServicio();
+
+  const conHorasFrio = servicio.prepararRegistroHistorial(crearRegistro());
+  const conDiasGrado = servicio.prepararRegistroHistorial(crearRegistro({
+    horas_frio_acumuladas: null,
+    dias_grado_acumulados: 4.3611,
+  }));
+  const sinDatos = servicio.prepararRegistroHistorial(crearRegistro({
+    horas_frio_acumuladas: null,
+    dias_grado_acumulados: null,
+  }));
+
+  assert.deepEqual(conHorasFrio.agroclima.indicador, { tipo: 'HF', valor: '12.50' });
+  assert.deepEqual(conDiasGrado.agroclima.indicador, { tipo: 'DG', valor: '4.36' });
+  assert.equal(sinDatos.agroclima.indicador, null);
+  assert.equal(sinDatos.agroclima.tieneDatos, false);
+});
+
+test('el historial React mantiene un unico detalle inline y la terminologia de insectos', () => {
+  const historyPage = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'pages', 'chanchitos', 'ChanchitosHistoryPage.jsx'), 'utf8');
+  const historyTable = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'components', 'chanchitos', 'HistoryTable.jsx'), 'utf8');
+  const detail = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'components', 'chanchitos', 'ChanchitosDetail.jsx'), 'utf8');
+  const actions = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'components', 'chanchitos', 'HistoryRowActions.jsx'), 'utf8');
+
+  assert.match(historyPage, /const \[openDetailId, setOpenDetailId\] = useState\(null\)/);
+  assert.match(historyPage, /closeOpenDetail\(\);/);
+  assert.match(historyTable, /<ChanchitosDetail detail=\{detailState\.data\} \/>/);
+  assert.match(historyTable, /const isDetailOpen = detailState\.id === record\.idMonitoreo/);
+  assert.match(historyTable, /Total insectos/);
+  assert.match(detail, /Total de insectos/);
+  assert.match(historyTable, /indicadorAgroclimatico/);
+  assert.match(detail, /indicadorAgroclimatico/);
+  assert.doesNotMatch(historyTable, /HF .*DG/);
+  assert.doesNotMatch(historyPage, /ChanchitosDetailPanel|panelDetailId|onOpenPanel/);
+  assert.doesNotMatch(actions, /Abrir panel experimental|onOpenPanel/);
+});
+
+test('el historial React invalida respuestas obsoletas y correlaciona sus consultas', () => {
+  const historyPage = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'pages', 'chanchitos', 'ChanchitosHistoryPage.jsx'), 'utf8');
+  const api = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'api', 'chanchitosApi.js'), 'utf8');
+  const service = fs.readFileSync(path.join(__dirname, '..', 'src', 'services', 'chanchitos.service.js'), 'utf8');
+
+  assert.match(historyPage, /historyRequestSequenceRef/);
+  assert.match(historyPage, /historyControllerRef\.current\?\.abort\(\)/);
+  assert.match(historyPage, /historyRequestSequenceRef\.current !== sequence/);
+  assert.match(historyPage, /historyRequestSequenceRef\.current \+= 1/);
+  assert.match(api, /X-Request-Id/);
+  assert.match(service, /\[MONIPLA\]\[CHANCHITOS\]\[HISTORIAL\]\[QUERY_START\]/);
+  assert.match(service, /\[MONIPLA\]\[CHANCHITOS\]\[HISTORIAL\]\[QUERY_END\]/);
+  assert.match(service, /etapaTimeout: error\.code === 'ETIMEOUT' \? consulta : null/);
+  assert.match(service, /medir\('resumen', 'resumenMs'/);
+  assert.match(service, /medir\('opciones', 'opcionesMs'/);
+  assert.match(service, /medir\(\s*'pagina',\s*'paginaMs'/);
+});
+
 test('valida rangos de fecha sin consultar el repositorio', async () => {
   const { servicio, llamadas } = crearServicio();
   const resultado = await servicio.obtenerHistorial({ fechaDesde: '2026-08-20', fechaHasta: '2026-08-01' });
@@ -210,6 +297,9 @@ test('la paginacion se aplica a cabeceras y los detalles se agregan despues por 
   assert.match(contenido, /SUM\(ISNULL\(cantidad_bichos, 0\)\) AS total_bichos/);
   assert.match(contenido, /\.input\('genFundo', this\.sql\.Int, filtros\.genFundo \|\| null\)/);
   assert.match(contenido, /\.input\('idCatalogoSdp', this\.sql\.Int, filtros\.idCatalogoSdp \|\| null\)/);
+  assert.match(contenido, /obtenerPredicadoUbicacionResuelta\(/);
+  assert.match(contenido, /'mbFiltro\.gen_fundo', 'gcFiltro\.GEN_FUNDO', 'cab\.gen_fundo', 'genFundo'/);
+  assert.match(contenido, /\$\{columnaCatalogo\} IS NULL AND \$\{columnaCuartel\} = @\$\{parametro\}/);
 });
 
 test('conteo, resumen y filtros de fecha reutilizan la misma base y deteccion correlacionada', () => {

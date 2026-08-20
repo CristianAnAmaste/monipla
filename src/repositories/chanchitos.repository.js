@@ -770,9 +770,15 @@ class ChanchitosRepository {
         LEFT JOIN dbo.GEN_CAMPO cFiltro ON cFiltro.Gen_Campo = COALESCE(gcFiltro.GEN_CAMPO, cab.gen_campo)
         LEFT JOIN dbo.GEN_VARIEDAD vFiltro ON vFiltro.gen_variedad = COALESCE(gcFiltro.GEN_VARIEDAD, cab.gen_variedad)
       `);
-      if (filtros.genFundo) condiciones.push(`COALESCE(mbFiltro.gen_fundo, gcFiltro.GEN_FUNDO, cab.gen_fundo) = @genFundo`);
-      if (filtros.genCampo) condiciones.push(`COALESCE(mbFiltro.gen_campo, gcFiltro.GEN_CAMPO, cab.gen_campo) = @genCampo`);
-      if (filtros.genVariedad) condiciones.push(`COALESCE(mbFiltro.gen_variedad, gcFiltro.GEN_VARIEDAD, cab.gen_variedad) = @genVariedad`);
+      if (filtros.genFundo) condiciones.push(this.obtenerPredicadoUbicacionResuelta(
+        'mbFiltro.gen_fundo', 'gcFiltro.GEN_FUNDO', 'cab.gen_fundo', 'genFundo'
+      ));
+      if (filtros.genCampo) condiciones.push(this.obtenerPredicadoUbicacionResuelta(
+        'mbFiltro.gen_campo', 'gcFiltro.GEN_CAMPO', 'cab.gen_campo', 'genCampo'
+      ));
+      if (filtros.genVariedad) condiciones.push(this.obtenerPredicadoUbicacionResuelta(
+        'mbFiltro.gen_variedad', 'gcFiltro.GEN_VARIEDAD', 'cab.gen_variedad', 'genVariedad'
+      ));
       if (filtros.idCatalogoSdp) condiciones.push(`(
         cab.id_catalogo_sdp = @idCatalogoSdp
         OR cab.codigo_cuartel = (SELECT cuartel FROM dbo.MONIPLA_CATALOGO_SDP_MB WHERE id_catalogo_sdp = @idCatalogoSdp)
@@ -812,6 +818,14 @@ class ChanchitosRepository {
       ${joins.join('\n')}
       WHERE ${condiciones.join('\n AND ')}
     `;
+  }
+
+  obtenerPredicadoUbicacionResuelta(columnaCatalogo, columnaCuartel, columnaCabecera, parametro) {
+    return `(
+      ${columnaCatalogo} = @${parametro}
+      OR (${columnaCatalogo} IS NULL AND ${columnaCuartel} = @${parametro})
+      OR (${columnaCatalogo} IS NULL AND ${columnaCuartel} IS NULL AND ${columnaCabecera} = @${parametro})
+    )`;
   }
 
   obtenerJoinsPresentacionHistorialChanchitos() {

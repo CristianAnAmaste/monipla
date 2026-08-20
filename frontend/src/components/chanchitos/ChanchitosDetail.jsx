@@ -15,14 +15,15 @@ function DetailField({ label, value }) {
 
 function ChanchitosDetail({ detail }) {
   const states = detail.matriz || [];
+  const indicadorAgroclimatico = detail.agroclima?.indicador;
   const findCell = (stateId, positionId) => states.find((state) => state.idEstadoMonitoreo === stateId)?.posiciones.find((position) => position.idEstadoPosicion === positionId);
 
   return (
     <section className="space-y-4 border-t border-[#dbe5da] bg-[#f8fbf6] p-4 sm:p-5" aria-label={`Detalle del monitoreo ${detail.idMonitoreo}`}>
       <div className="grid gap-4 lg:grid-cols-2">
         <DetailBlock title="Identificación"><DetailField label="Fundo" value={detail.fundo} /><DetailField label="Productor / Campo" value={detail.campo} /><DetailField label="Variedad" value={detail.variedad} /><DetailField label="Cuartel" value={detail.cuartel} /><DetailField label="SDP" value={detail.sdp} /><DetailField label="CSG" value={detail.csg} /><DetailField label="Trazabilidad" value={detail.trazabilidad} /></DetailBlock>
-        <DetailBlock title="Monitoreo"><DetailField label="Fecha" value={detail.fechaMonitoreo} /><DetailField label="Monitoreador" value={detail.monitoreador} /><DetailField label="Estado fenológico" value={detail.estadoFenologico} /><DetailField label="Cantidad de plantas" value={detail.cantPlantas} /><DetailField label="Total de bichos" value={detail.totalBichos} /><DetailField label="Posiciones con detección" value={detail.posicionesConDeteccion} /></DetailBlock>
-        <DetailBlock title="Agroclima"><DetailField label="Estación" value={detail.agroclima?.estacion} /><DetailField label="Horas frío" value={detail.agroclima?.horasFrio} /><DetailField label="Días grado" value={detail.agroclima?.diasGrado} /><DetailField label="Fecha de corte" value={detail.agroclima?.fechaCorte} /></DetailBlock>
+        <DetailBlock title="Monitoreo"><DetailField label="Fecha" value={detail.fechaMonitoreo} /><DetailField label="Monitoreador" value={detail.monitoreador} /><DetailField label="Estado fenológico" value={detail.estadoFenologico} /><DetailField label="Cantidad de plantas" value={detail.cantPlantas} /><DetailField label="Total de insectos" value={detail.totalBichos} /><DetailField label="Posiciones con detección" value={detail.posicionesConDeteccion} /></DetailBlock>
+        <DetailBlock title="Agroclima"><DetailField label="Estación" value={detail.agroclima?.estacion} /><DetailField label={indicadorAgroclimatico?.tipo === 'HF' ? 'Horas frío' : indicadorAgroclimatico?.tipo === 'DG' ? 'Días grado' : 'Indicador'} value={indicadorAgroclimatico?.valor || 'Sin datos'} /><DetailField label="Fecha de corte" value={detail.agroclima?.fechaCorte} /></DetailBlock>
         <DetailBlock title="Observaciones"><div className="sm:col-span-2"><dt className="text-xs font-medium uppercase tracking-wide text-[#718072]">Registro</dt><dd className="mt-1 whitespace-pre-wrap text-[#1f2922]">{detail.observaciones === '-' ? 'Sin observaciones' : detail.observaciones}</dd></div></DetailBlock>
       </div>
 

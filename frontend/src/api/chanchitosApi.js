@@ -44,9 +44,12 @@ export function guardarMonitoreoChanchitos(values, images = []) {
   });
 }
 
-export function obtenerHistorialChanchitos(filters = {}, signal) {
+export function obtenerHistorialChanchitos(filters = {}, signal, requestId) {
   const serialized = serializeChanchitosHistoryFilters(filters);
-  return requestJson(`/app/api/chanchitos/historial${serialized ? `?${serialized}` : ''}`, { signal });
+  return requestJson(`/app/api/chanchitos/historial${serialized ? `?${serialized}` : ''}`, {
+    signal,
+    headers: requestId ? { 'X-Request-Id': requestId } : undefined,
+  });
 }
 
 export async function descargarPdfGeneralChanchitos(filters = {}) {

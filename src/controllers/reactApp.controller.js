@@ -105,8 +105,13 @@ class ReactAppController {
   }
 
   async obtenerHistorialChanchitos(req, res) {
+    const requestId = this.obtenerRequestId(req);
+    console.info('[MONIPLA][REACT][CHANCHITOS][HISTORIAL][REQUEST]', {
+      requestId,
+      parametros: this.describirParametrosHistorial(req.query || {}),
+    });
     try {
-      const result = await this.chanchitosService.obtenerHistorial(req.query || {});
+      const result = await this.chanchitosService.obtenerHistorial(req.query || {}, { requestId });
 
       if (!result.success) {
         return res.status(400).json({
@@ -129,12 +134,28 @@ class ReactAppController {
         },
       });
     } catch (error) {
-      console.error('[MONIPLA][REACT][CHANCHITOS][HISTORIAL][ERROR]', error);
+      console.error('[MONIPLA][REACT][CHANCHITOS][HISTORIAL][ERROR]', {
+        requestId,
+        error: error.message,
+      });
       return res.status(500).json({
         success: false,
         message: 'No fue posible cargar el historial de Chanchito Blanco.',
       });
     }
+  }
+
+  obtenerRequestId(req) {
+    const value = req.get?.('X-Request-Id') || req.headers?.['x-request-id'];
+    const normalized = Array.isArray(value) ? value[0] : value;
+    return String(normalized || '').trim().slice(0, 120) || null;
+  }
+
+  describirParametrosHistorial(query = {}) {
+    return Object.fromEntries(Object.entries(query).map(([nombre, valor]) => [nombre, {
+      tipo: Array.isArray(valor) ? 'array' : typeof valor,
+      valor: Array.isArray(valor) ? valor.map((item) => String(item)) : String(valor),
+    }]));
   }
 
   async obtenerDetalleChanchitos(req, res) {
